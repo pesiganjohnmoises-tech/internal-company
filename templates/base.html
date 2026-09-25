@@ -34,6 +34,7 @@
           <strong>{{user.display_name}}</strong>
           <span>@{{user.username}} · {{role_label}}</span>
         </div>
+        <a class="account-link" href="{{url_for('account_password')}}">{{icon('shield',16)}}Change password</a>
         <form method="post" action="{{url_for('logout')}}">
           <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
           <button class="account-signout" type="submit">{{icon('logout',16)}}Sign out</button>

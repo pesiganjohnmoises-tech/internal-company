@@ -1,1 +1,61 @@
-{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}{% from "_icons.html" import icon %}{% block title %}Records · Internal Company Directory{% endblock %}{% block content %}<div class="admin-head"><div><div class="eyebrow">ADMINISTRATION / DATABASE</div><h1>Company records</h1><p class="muted">Administrative inspection, including source metadata.</p></div></div>{{ admin_nav('admin_records') }}<form class="searchbar compact" method="get" role="search">{{icon('search',18)}}<label class="sr-only" for="records-filter">Filter by company name</label><input id="records-filter" name="q" value="{{q}}" placeholder="Filter by company name…"><button>Filter →</button></form><section class="admin-panel"><div class="table-wrap"><table><thead><tr><th>Company</th><th>Country</th><th>Network</th><th>Contact type</th><th>Source file</th><th>Source row</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.company_name}}</td><td>{{r.country}}</td><td>{{r.network or '—'}}</td><td>{{r.contact_type or '—'}}</td><td>{{r.source_file or '—'}}</td><td>{{r.source_row or '—'}}</td></tr>{% else %}<tr><td colspan="6" class="table-empty">No records found.</td></tr>{% endfor %}</tbody></table></div></section>{% endblock %}
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}{% from "_icons.html" import icon %}
+{% block title %}Records · Internal Company Directory{% endblock %}
+{% block content %}
+<div class="admin-head">
+  <div>
+    <div class="eyebrow">ADMINISTRATION / DATABASE</div>
+    <h1>Company records</h1>
+    <p class="muted">Administrative inspection, including source metadata.</p>
+  </div>
+</div>
+{{ admin_nav('admin_records') }}
+<form class="searchbar compact" method="get" role="search">
+  {{icon('search',18)}}
+  <label class="sr-only" for="records-filter">Filter by company name or agent ID</label>
+  <input id="records-filter" name="q" value="{{q}}" placeholder="Filter by company name or agent ID…">
+  <label class="sr-only" for="records-country">Country</label>
+  <select id="records-country" name="country" class="search-select">
+    <option value="">All countries</option>
+    {% for c in countries %}<option value="{{c}}" {% if c|lower==country|lower %}selected{% endif %}>{{c}}</option>{% endfor %}
+  </select>
+  {% if q or country %}<a class="clear-search" href="{{url_for('admin_records')}}">Clear</a>{% endif %}
+  <button>Filter →</button>
+</form>
+<section class="admin-panel">
+  <p class="muted table-summary">{% if total %}Showing <strong>{{start}}–{{end}}</strong> of <strong>{{total}}</strong> companies{% else %}No companies match these filters.{% endif %}</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Company</th><th>Agent ID</th><th>Country</th><th>Network</th><th>Contacts</th><th>Source file</th><th>Row</th><th>Updated</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><a class="table-link" href="{{url_for('company',company_id=r.id)}}">{{r.company_name}}</a></td>
+          <td>{{r.agent_id or '—'}}</td>
+          <td>{{r.country}}</td>
+          <td>{{r.network or '—'}}</td>
+          <td>{{r.contacts}}</td>
+          <td>{{r.source_file or '—'}}</td>
+          <td>{{r.source_row or '—'}}</td>
+          <td>{{r.updated_at|when}}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="table-empty">No records found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pages>1 %}
+  <nav class="pager" aria-label="Record pages">
+    {% if page>1 %}<a class="pager-step" href="{{url_for('admin_records',q=q or None,country=country or None,page=page-1)}}" rel="prev">← Previous</a>{% else %}<span class="pager-step disabled" aria-disabled="true">← Previous</span>{% endif %}
+    <div class="pager-pages">
+      {% for n in page_links %}
+        {% if n is none %}<span class="pager-gap" aria-hidden="true">…</span>
+        {% elif n==page %}<span class="pager-num current" aria-current="page">{{n}}</span>
+        {% else %}<a class="pager-num" href="{{url_for('admin_records',q=q or None,country=country or None,page=n)}}" aria-label="Page {{n}}">{{n}}</a>{% endif %}
+      {% endfor %}
+    </div>
+    {% if page<pages %}<a class="pager-step" href="{{url_for('admin_records',q=q or None,country=country or None,page=page+1)}}" rel="next">Next →</a>{% else %}<span class="pager-step disabled" aria-disabled="true">Next →</span>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

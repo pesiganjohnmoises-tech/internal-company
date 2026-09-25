@@ -103,16 +103,16 @@ def sales_coverage(con,sales_fields):
         out.append({"label":label,"assigned":len(companies)-len(missing),"missing":missing,"reps":ranked,"total":len(companies)})
     return out
 
-def access_overview(con,sales_fields):
-    """Every account with what it can see. A USER sees a company only with both its country and company granted."""
+def access_overview(con,sales_fields,access_sql):
+    """Every account with what it can see. access_sql is app.access_sql, the rule search and the company page use."""
     total=con.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
     users=[]
     for u in con.execute("SELECT id,username,role,status FROM users ORDER BY username COLLATE NOCASE").fetchall():
         row={"id":u["id"],"username":u["username"],"role":u["role"],"status":u["status"],"total":total}
         if u["role"]=="USER":
             row["countries"]=con.execute("SELECT COUNT(*) FROM user_country_access WHERE user_id=?",(u["id"],)).fetchone()[0]
-            row["visible"]=con.execute("""SELECT COUNT(*) FROM companies co WHERE EXISTS(SELECT 1 FROM user_company_access a WHERE a.user_id=? AND a.company_id=co.id)
-                AND EXISTS(SELECT 1 FROM user_country_access b WHERE b.user_id=? AND b.country_id=co.country_id)""",(u["id"],u["id"])).fetchone()[0]
+            clause,params=access_sql(u)
+            row["visible"]=con.execute(f"SELECT COUNT(*) FROM companies co WHERE {clause}",params).fetchone()[0]
             granted={r["field_name"] for r in con.execute("SELECT field_name FROM user_field_access WHERE user_id=?",(u["id"],))}
             row["sales"]=[label for key,label in sales_fields.items() if key in granted]
             row["no_access"]=u["status"]=="ACTIVE" and row["visible"]==0

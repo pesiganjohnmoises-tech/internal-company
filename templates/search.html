@@ -1,27 +1,40 @@
 {% extends "base.html" %}
-{% block title %}{{'Search results' if q else 'Directory'}} · Internal Company Directory{% endblock %}
+{% block title %}{{'Search results' if q or country else 'Directory'}} · Internal Company Directory{% endblock %}
 {% block content %}
 {% macro search_form(compact=False) -%}
 <form class="searchbar{% if compact %} search-compact{% endif %}" method="get" action="{{url_for('search')}}" role="search">
   <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
   <label class="sr-only" for="directory-query">Search the directory</label>
-  <input id="directory-query" name="q" value="{{q}}" placeholder="Search companies, people, locations…" autocomplete="off"{% if not q %} autofocus{% endif %}>
-  {% if q %}<a class="clear-search" href="{{url_for('search')}}">Clear</a>{% endif %}
+  <input id="directory-query" name="q" value="{{q}}" placeholder="Search companies, people, locations…" autocomplete="off"{% if not q and not country %} autofocus{% endif %}>
+  {% if countries|length>1 %}
+  <label class="sr-only" for="directory-country">Country</label>
+  <select id="directory-country" name="country" class="search-select">
+    <option value="">All countries</option>
+    {% for c in countries %}<option value="{{c}}" {% if c|lower==country|lower %}selected{% endif %}>{{c}}</option>{% endfor %}
+  </select>
+  {% endif %}
+  {% if q or country %}<a class="clear-search" href="{{url_for('search')}}">Clear</a>{% endif %}
   <button>Search</button>
 </form>
 {%- endmacro %}
 <div class="search-page">
-{% if not q %}
+{% if not q and not country %}
 <section class="hero">
   <h1>Your network, <em>within reach.</em></h1>
   {{ search_form() }}
   <p class="hint">Search by agent ID, company, contact name, email, phone, city or country. Use several words to narrow results.</p>
+  {% if countries %}
+  <nav class="country-browse" aria-label="Browse by country">
+    <span>Browse:</span>
+    {% for c in countries %}<a class="country-chip" href="{{url_for('search',country=c)}}">{{c}}</a>{% endfor %}
+  </nav>
+  {% endif %}
 </section>
 {% else %}
 {{ search_form(True) }}
 <header class="results-bar">
   <div>
-    <h1 class="results-title">Results for “{{q}}”</h1>
+    <h1 class="results-title">{% if q %}Results for “{{q}}”{% if country %} in {{country}}{% endif %}{% else %}Companies in {{country}}{% endif %}</h1>
     <p class="results-summary">{% if total %}Showing <strong>{{start}}–{{end}}</strong> of <strong>{{total}}</strong> {{'company' if total==1 else 'companies'}}{% else %}No matching companies{% endif %}</p>
   </div>
   {% if pages>1 %}<span class="count">Page {{page}} of {{pages}}</span>{% endif %}
@@ -64,21 +77,21 @@
 
 {% if pages>1 %}
 <nav class="pager" aria-label="Search result pages">
-  {% if page>1 %}<a class="pager-step" href="{{url_for('search',q=q,page=page-1)}}" rel="prev">← Previous</a>{% else %}<span class="pager-step disabled" aria-disabled="true">← Previous</span>{% endif %}
+  {% if page>1 %}<a class="pager-step" href="{{url_for('search',q=q or None,country=country or None,page=page-1)}}" rel="prev">← Previous</a>{% else %}<span class="pager-step disabled" aria-disabled="true">← Previous</span>{% endif %}
   <div class="pager-pages">
     {% for n in page_links %}
       {% if n is none %}<span class="pager-gap" aria-hidden="true">…</span>
       {% elif n==page %}<span class="pager-num current" aria-current="page">{{n}}</span>
-      {% else %}<a class="pager-num" href="{{url_for('search',q=q,page=n)}}" aria-label="Page {{n}}">{{n}}</a>{% endif %}
+      {% else %}<a class="pager-num" href="{{url_for('search',q=q or None,country=country or None,page=n)}}" aria-label="Page {{n}}">{{n}}</a>{% endif %}
     {% endfor %}
   </div>
-  {% if page<pages %}<a class="pager-step" href="{{url_for('search',q=q,page=page+1)}}" rel="next">Next →</a>{% else %}<span class="pager-step disabled" aria-disabled="true">Next →</span>{% endif %}
+  {% if page<pages %}<a class="pager-step" href="{{url_for('search',q=q or None,country=country or None,page=page+1)}}" rel="next">Next →</a>{% else %}<span class="pager-step disabled" aria-disabled="true">Next →</span>{% endif %}
 </nav>
 {% endif %}
 {% else %}
 <div class="empty">
   <div class="empty-icon" aria-hidden="true">⌕</div>
-  <h3>No companies match “{{q}}”</h3>
+  <h3>{% if q %}No companies match “{{q}}”{% if country %} in {{country}}{% endif %}{% else %}No companies you can see in {{country}}{% endif %}</h3>
   <p>Check the spelling, try fewer words, or search by a different detail such as a city or contact name.</p>
 </div>
 {% endif %}

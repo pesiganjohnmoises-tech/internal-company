@@ -1,1 +1,49 @@
-{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}{% from "_icons.html" import icon %}{% block title %}Users · Internal Company Directory{% endblock %}{% block content %}<div class="admin-head"><div><div class="eyebrow">ADMINISTRATION / USERS</div><h1>User management</h1><p class="muted">Create accounts and manage their directory access.</p></div><a class="primary" href="{{url_for('user_create')}}">{{icon('plus',16)}}Create user</a></div>{{ admin_nav('users') }}<section class="admin-panel"><div class="table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th><span class="sr-only">Action</span></th></tr></thead><tbody>{% set role_names={'USER':'User','FULL_ACCESS':'Full Access','ADMIN':'Admin'} %}{% for u in users %}<tr><td><span class="table-user"><span class="table-avatar" aria-hidden="true">{{u.username[:1]|upper}}</span><strong>{{u.username}}</strong></span></td><td><span class="badge role-badge role-{{u.role|lower}}">{{role_names.get(u.role,u.role)}}</span></td><td><span class="status {{'disabled' if u.status=='DISABLED' else ''}}">{{u.status}}</span></td><td>{% if u.created_at %}<time datetime="{{u.created_at}}" title="{{u.created_at}}">{{u.created_at[:10]}}</time>{% else %}—{% endif %}</td><td><a class="table-link" href="{{url_for('user_edit',uid=u.id)}}">Edit access →</a></td></tr>{% else %}<tr><td colspan="5" class="table-empty">No user accounts yet.</td></tr>{% endfor %}</tbody></table></div></section>{% endblock %}
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}{% from "_icons.html" import icon %}
+{% block title %}Users · Internal Company Directory{% endblock %}
+{% block content %}
+<div class="admin-head">
+  <div>
+    <div class="eyebrow">ADMINISTRATION / USERS</div>
+    <h1>User management</h1>
+    <p class="muted">Create accounts and manage their directory access.</p>
+  </div>
+  <a class="primary" href="{{url_for('user_create')}}">{{icon('plus',16)}}Create user</a>
+</div>
+{{ admin_nav('users') }}
+<form class="searchbar compact" method="get" role="search">
+  {{icon('search',18)}}
+  <label class="sr-only" for="users-filter">Filter users</label>
+  <input id="users-filter" name="q" value="{{q}}" placeholder="Filter by username, name, role or status…">
+  {% if q %}<a class="clear-search" href="{{url_for('users')}}">Clear</a>{% endif %}
+  <button>Filter →</button>
+</form>
+<section class="admin-panel">
+  {% if q %}<p class="muted table-summary">{{users|length}} of {{total_users}} users match “{{q}}”.</p>{% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Can see</th><th>Last sign-in</th><th>Created</th><th><span class="sr-only">Action</span></th></tr></thead>
+      <tbody>
+        {% set role_names={'USER':'User','FULL_ACCESS':'Full Access','ADMIN':'Admin'} %}
+        {% for u in users %}
+        <tr>
+          <td>
+            <span class="table-user">
+              <span class="table-avatar" aria-hidden="true">{{u.display_name[:1]|upper}}</span>
+              <span><strong>{{u.display_name}}</strong>{% if u.display_name!=u.username %}<small class="table-sub">@{{u.username}}</small>{% endif %}</span>
+            </span>
+          </td>
+          <td><span class="badge role-badge role-{{u.role|lower}}">{{role_names.get(u.role,u.role)}}</span></td>
+          <td><span class="status {{'disabled' if u.status=='DISABLED' else ''}}">{{u.status}}</span></td>
+          <td>{% if u.role!='USER' %}All {{total_companies}} companies{% elif u.visible %}{{u.visible}} of {{total_companies}} companies{% else %}<span class="warn-text">No records</span>{% endif %}</td>
+          <td>{{u.last_login_at|when if u.last_login_at else 'Never'}}</td>
+          <td>{{u.created_at|when}}</td>
+          <td><a class="table-link" href="{{url_for('user_edit',uid=u.id)}}">Edit access →</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="table-empty">{{'No users match this filter.' if q else 'No user accounts yet.'}}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

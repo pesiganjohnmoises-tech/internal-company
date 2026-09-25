@@ -96,7 +96,9 @@ def backfill_source_data(db_path,data_dir):
                         con.execute(f"UPDATE {table} SET source_data=? WHERE id=?",(source_record(labels,row),r["id"])); filled+=1
         con.commit(); return filled
     finally: con.close()
-def import_workbook(path,db_path,country,replace_country=False):
+def import_workbook(path,db_path,country,replace_country=False,dry_run=False):
+    """Load a workbook into one country. The result's "changes" lists companies added and removed.
+    dry_run runs the whole import inside the transaction and rolls it back (import preview)."""
     wb=load_workbook(path,read_only=True,data_only=True)
     try:
         ws=wb.active; rows=ws.iter_rows(values_only=True)
@@ -126,6 +128,13 @@ def import_workbook(path,db_path,country,replace_country=False):
         crow=con.execute("SELECT id FROM countries WHERE name=? COLLATE NOCASE",(effective_country,)).fetchone()
         cid=crow["id"]
         key=lambda name: con.execute("SELECT lower(trim(?))",(name,)).fetchone()[0]
+        before={r["k"]:r["company_name"] for r in con.execute("SELECT lower(trim(company_name)) k,company_name FROM companies WHERE country_id=? ORDER BY company_name COLLATE NOCASE",(cid,))}
+        contacts_before=con.execute("SELECT COUNT(*) FROM contacts WHERE company_id IN (SELECT id FROM companies WHERE country_id=?)",(cid,)).fetchone()[0]
+        incoming={}
+        for _,v in data: incoming.setdefault(key(v["company_name"]),v["company_name"])
+        changes={"added":sorted((n for k,n in incoming.items() if k not in before),key=str.lower),
+                 "removed":[n for k,n in before.items() if k not in incoming] if replace_country else [],
+                 "kept":sum(k in before for k in incoming),"contacts_before":contacts_before,"new_country":not before}
         kept={}
         if replace_country:
             # Companies still in the workbook are refreshed in place (matched by name) so their IDs and
@@ -158,8 +167,10 @@ def import_workbook(path,db_path,country,replace_country=False):
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(company_id,v.get("name"),v.get("job_position"),v.get("email"),v.get("phone"),v.get("address"),v.get("contact_type"),v.get("landline_no"),Path(path).name,rownum,v["source_data"],now,now))
             inserted+=1
         con.execute("UPDATE countries SET source_file=?,updated_at=? WHERE id=?",(Path(path).name,now,cid))
-        con.commit()
+        changes["contacts_after"]=inserted
+        if dry_run: con.rollback()
+        else: con.commit()
     except Exception:
         con.rollback(); raise
     finally: con.close()
-    return {"processed":len(data)+len(errors),"imported":inserted,"duplicates":0,"errors":errors}
+    return {"processed":len(data)+len(errors),"imported":inserted,"duplicates":0,"errors":errors,"country":effective_country,"changes":changes}

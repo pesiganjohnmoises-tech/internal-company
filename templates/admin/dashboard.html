@@ -94,7 +94,7 @@
     <div class="dash-group">
       <h3>By country</h3>
       <ul class="bar-list">{% for c in p.data.countries %}
-        <li><a href="{{url_for('search',q=c.name)}}"><span class="bar-label">{{c.name}}</span><span class="bar-value">{{c.companies}} <small>companies · {{c.contacts}} contacts</small></span><span class="bar" aria-hidden="true"><span style="width:{{(100*c.companies/p.data.max_country)|round(1)}}%"></span></span></a></li>{% endfor %}
+        <li><a href="{{url_for('search',country=c.name)}}"><span class="bar-label">{{c.name}}</span><span class="bar-value">{{c.companies}} <small>companies · {{c.contacts}} contacts</small></span><span class="bar" aria-hidden="true"><span style="width:{{(100*c.companies/p.data.max_country)|round(1)}}%"></span></span></a></li>{% endfor %}
       </ul>
     </div>
     <div class="dash-group">
@@ -169,7 +169,7 @@
   </div>
   {% if p.error %}{{ panel_error() }}
   {% else %}
-  {% for f in p.data.stale %}<div class="notice error" role="status"><strong>data/{{f.name}} is older than the live {{f.country}} data.</strong> {{f.country}} was last loaded from an uploaded workbook; importing data/{{f.name}} (modified {{f.modified}}) would replace it with older data.</div>{% endfor %}
+  {% for f in p.data.stale %}<div class="notice error" role="status"><strong>data/{{f.name}} is older than the live {{f.country}} data.</strong> {{f.country}} was last loaded from an uploaded workbook; importing data/{{f.name}} (modified {{f.modified|when}}) would replace it with older data.</div>{% endfor %}
   {% if p.data.failed %}<div class="notice error" role="status">{{p.data.failed}} import{{'s' if p.data.failed!=1}} failed. See the history on <a href="{{url_for('imports_page')}}">Excel imports</a>.</div>{% endif %}
   {% if not p.data.countries %}<div class="dash-empty">No countries loaded yet. Import a workbook from Excel imports.</div>
   {% else %}
@@ -178,7 +178,7 @@
     <tbody>{% for c in p.data.countries %}<tr>
       <td><strong>{{c.name}}</strong></td>
       <td>{{c.source or '—'}}{% if c.uploaded %} <span class="badge neutral">uploaded</span>{% endif %}</td>
-      <td>{{c.loaded or '—'}}</td>
+      <td>{{c.loaded|when}}</td>
       <td>{{c.companies}}</td>
       <td>{% if c.last %}<span class="status {{'disabled' if c.last.status=='FAILED' else ''}}">{{c.last.status}}</span> {{c.last.records_imported}} rows{% else %}—{% endif %}</td>
     </tr>{% endfor %}</tbody>
@@ -189,7 +189,7 @@
   {% endif %}
 </section>
 
-<section class="admin-panel"><div class="section-head"><h2>Recent imports</h2><a class="primary small" href="{{url_for('imports_page')}}">Manage imports →</a></div>{% if imports %}<div class="table-wrap"><table><thead><tr><th>Source</th><th>Country</th><th>Status</th><th>Processed</th><th>Imported</th><th>When</th></tr></thead><tbody>{% for i in imports %}<tr><td>{{i.source_file}}</td><td>{{i.country}}</td><td><span class="status {{'disabled' if i.status=='FAILED' else ''}}">{{i.status}}</span></td><td>{{i.records_processed}}</td><td>{{i.records_imported}}</td><td>{{i.imported_at}}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">No imports recorded yet.</p>{% endif %}</section>
+<section class="admin-panel"><div class="section-head"><h2>Recent imports</h2><a class="primary small" href="{{url_for('imports_page')}}">Manage imports →</a></div>{% if imports %}<div class="table-wrap"><table><thead><tr><th>Source</th><th>Country</th><th>Status</th><th>Processed</th><th>Imported</th><th>When</th></tr></thead><tbody>{% for i in imports %}<tr><td>{{i.source_file}}</td><td>{{i.country}}</td><td><span class="status {{'disabled' if i.status=='FAILED' else ''}}">{{i.status}}</span></td><td>{{i.records_processed}}</td><td>{{i.records_imported}}</td><td>{{i.imported_at|when}}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">No imports recorded yet.</p>{% endif %}</section>
 {% set p=panels.activity %}
 <section class="admin-panel dash-panel" id="activity" aria-labelledby="activity-title">
   <div class="section-head">

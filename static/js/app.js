@@ -1,9 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
   const query = document.getElementById('directory-query');
   if (query && query.value) query.setSelectionRange(query.value.length, query.value.length);
-  document.querySelectorAll('form[onsubmit]').forEach(form => {
+  // Destructive forms carry their own question in data-confirm.
+  document.querySelectorAll('form[data-confirm]').forEach(form => {
     form.addEventListener('submit', event => {
-      if (!confirm('Are you sure?')) event.preventDefault();
+      if (!confirm(form.dataset.confirm)) event.preventDefault();
     });
   });
 });

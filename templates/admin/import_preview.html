@@ -1,0 +1,76 @@
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}
+{% block title %}Preview import · Internal Company Directory{% endblock %}
+{% block content %}
+{% set ch=r.changes %}
+<div class="admin-head">
+  <div>
+    <div class="eyebrow">ADMINISTRATION / DATA / PREVIEW</div>
+    <h1>Replace {{r.country}}?</h1>
+    <p class="muted">Nothing has changed yet. This is what importing <strong>{{source}}</strong> would do.</p>
+  </div>
+</div>
+{{ admin_nav('imports_page') }}
+
+{% if stale %}<div class="notice error" role="status"><strong>data/{{source}} is older than the live {{r.country}} data.</strong> {{r.country}} was last loaded from an uploaded workbook; importing this file would replace it with older data.</div>{% endif %}
+{% if ch.removed %}<div class="notice error" role="status"><strong>{{ch.removed|length}} compan{{'y' if ch.removed|length==1 else 'ies'}} will be removed</strong>, together with {{'its' if ch.removed|length==1 else 'their'}} contacts and any user access to {{'it' if ch.removed|length==1 else 'them'}}.</div>{% endif %}
+
+<div class="stats">
+  <div class="stat"><span>Companies after import</span><strong>{{ch.kept+ch.added|length}}</strong></div>
+  <div class="stat"><span>New companies</span><strong>{{ch.added|length}}</strong></div>
+  <div class="stat"><span>Removed companies</span><strong>{{ch.removed|length}}</strong></div>
+  <div class="stat"><span>Contact rows</span><strong class="smallstat">{{ch.contacts_before}} → {{ch.contacts_after}}</strong></div>
+</div>
+
+{% if ch.new_country %}<p class="notice success" role="status">{{r.country}} is not in the directory yet; it will be added as a new country.</p>{% endif %}
+
+{% if ch.added %}
+<section class="admin-panel">
+  <details {% if ch.added|length<=15 %}open{% endif %}>
+    <summary><h2 class="inline-h2">New companies <span class="count">{{ch.added|length}}</span></h2></summary>
+    <ul class="name-list">{% for n in ch.added %}<li>{{n}}</li>{% endfor %}</ul>
+  </details>
+  {% if partial %}
+  <p class="notice error" role="status"><strong>{{partial|length}} user{{'s' if partial|length!=1}} will not see the new companies</strong> because they are granted {{r.country}} company by company:
+    {% for u in partial %}<a href="{{url_for('user_edit',uid=u.id)}}">{{u.username}}</a>{{', ' if not loop.last}}{% endfor %}.
+    Give them “All companies in {{r.country}}” to include new companies automatically.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if ch.removed %}
+<section class="admin-panel">
+  <details open>
+    <summary><h2 class="inline-h2">Companies to be removed <span class="count">{{ch.removed|length}}</span></h2></summary>
+    <ul class="name-list">{% for n in ch.removed %}<li>{{n}}</li>{% endfor %}</ul>
+  </details>
+</section>
+{% endif %}
+
+{% if r.errors %}
+<section class="admin-panel">
+  <h2>Rows that will be skipped <span class="count">{{r.errors|length}}</span></h2>
+  <ul class="name-list">{% for e in r.errors[:50] %}<li>{{e}}</li>{% endfor %}</ul>
+  {% if r.errors|length>50 %}<p class="muted">… and {{r.errors|length-50}} more.</p>{% endif %}
+</section>
+{% endif %}
+
+<div class="save-bar">
+  <span class="muted">A backup of the database is saved automatically before the import runs.</span>
+  <div class="save-actions">
+    {% if confirm.pending %}
+    <form method="post" action="{{url_for('import_discard')}}">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <input type="hidden" name="pending" value="{{confirm.pending}}">
+      <button class="secondary">Cancel</button>
+    </form>
+    {% else %}
+    <a class="secondary cancel-link" href="{{url_for('imports_page')}}">Cancel</a>
+    {% endif %}
+    <form method="post" action="{{confirm.action}}" data-busy="Importing…">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      {% for k,v in confirm.items() if k!='action' %}<input type="hidden" name="{{k}}" value="{{v}}">{% endfor %}
+      <button class="primary">Replace {{r.country}} data</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

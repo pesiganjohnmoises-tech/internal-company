@@ -83,10 +83,10 @@ full_dts=dts(client("fulltest").get(f"/company/{sg}").data.decode())
 check("user company view: all non-sales columns of Full Access",dts(client("ann").get(f"/company/{sg}").data.decode())==[d for d in full_dts if d.strip() not in set(LABELS)-{"Kargosmart Sales"}])
 check("user company view: old sales header kept only as XLSX hint",">KG Sales<" in client("ann").get(f"/company/{sg}").data.decode())
 
-# --- Search only matches visible columns --------------------------------------------------------------
+# --- Search matches what the company page shows (v8) ---------------------------------------------------
 network=q("SELECT network FROM companies WHERE network IS NOT NULL AND network<>'' LIMIT 1")
 check("admin can search by network",b"result-card" in adm.get(f"/search?q={network}").data)
-check("User without Network field cannot search by it",b"result-card" not in client("ann").get(f"/search?q={network}").data)
+check("User can search Network, which their company page shows",b"result-card" in client("ann").get(f"/search?q={network}").data)
 check("User can still search visible fields",b"result-card" in client("ann").get("/search?q=Singapore").data)
 check("invalid offset does not crash",client("ann").get("/search?q=a&offset=abc").status_code==200)
 
@@ -203,7 +203,7 @@ nets={n["name"]:n["companies"] for n in bd["networks"]}
 check("breakdown: multi-network company counted for each network (comma and \"and\")",nets.get("TestNetA")==nets.get("TestNetB")==nets.get("TestNetC")==1)
 check("breakdown: names containing \"and\" are not split",nets.get("Andes Net")==1)
 check("breakdown: companies without network counted",bd["no_network"]==q("SELECT COUNT(*) FROM companies WHERE network IS NULL OR trim(network)=''"))
-check("breakdown panel links rows to search",'href="/search?q=Singapore"' in adm.get("/admin").data.decode())
+check("breakdown panel links rows to the country filter",'href="/search?country=Singapore"' in adm.get("/admin").data.decode())
 set_source(fx[0],**{"TI Sales":None,"KG Sales":"Rep One / Rep Two"})
 set_source(fx[1],**{"KG Sales":"rep one"})
 sc={s["label"]:s for s in A.dashboard.sales_coverage(con,A.SALES_FIELDS)}
@@ -214,7 +214,7 @@ check("sales: shared cells split and names merged case-insensitively",kg.get("re
 check("sales: assigned + missing = companies",all(s["assigned"]+len(s["missing"])==s["total"]==q("SELECT COUNT(*) FROM companies") for s in sc.values()))
 check("sales panel renders","Sales coverage" in adm.get("/admin").data.decode())
 con.execute("INSERT INTO users(username,password_hash,role,status) VALUES('noaccess','x','USER','ACTIVE')"); con.commit()
-ao={u["username"]:u for u in A.dashboard.access_overview(con,A.SALES_FIELDS)["users"]}
+ao={u["username"]:u for u in A.dashboard.access_overview(con,A.SALES_FIELDS,A.access_sql)["users"]}
 check("access: User visible count requires country AND company grant",ao["moises"]["visible"]==q("SELECT COUNT(*) FROM companies co WHERE EXISTS(SELECT 1 FROM user_company_access a WHERE a.user_id=? AND a.company_id=co.id) AND EXISTS(SELECT 1 FROM user_country_access b WHERE b.user_id=? AND b.country_id=co.country_id)",ids["moises"],ids["moises"]))
 check("access: User sales columns shown",ao["moises"]["sales"]==["Tri-Star Logistics Sales","KirinWorld Sales"])
 check("access: active User without grants flagged",ao["noaccess"]["no_access"] and not ao["moises"]["no_access"])
@@ -375,6 +375,170 @@ check("deploy hook answers ping",hook({},event="ping").data==b"pong")
 check("deploy hook ignores other branches",b"ignored" in hook({"ref":"refs/heads/dev"}).data)
 check("deploy hook reports failed pull",hook({"ref":"refs/heads/main"}).status_code==500)  # temp copy is not a git repo
 A.DEPLOY_SECRET=""
+
+# === v8: admin productivity =============================================================================
+import io, logging as _logging
+con.execute("DELETE FROM users WHERE username IN ('v8admin','v8user','v8partial')")
+for u,role in (("v8admin","ADMIN"),("v8user","USER"),("v8partial","USER")):
+    con.execute("INSERT INTO users(username,password_hash,role,status,created_at,updated_at) VALUES(?,?,?,?,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",(u,generate_password_hash(PW),role,"ACTIVE"))
+con.commit()
+v8={u:q("SELECT id FROM users WHERE username=?",u) for u in ("v8admin","v8user","v8partial")}
+boss=client("v8admin")
+sg_cid=q("SELECT id FROM countries WHERE name='Singapore'")
+sg_all=[str(r[0]) for r in con.execute("SELECT id FROM companies WHERE country_id=?",(sg_cid,))]
+def cards(c,**params): return re.findall(r'class="result-card" href="/company/(\d+)"',c.get("/search",query_string=params).data.decode())
+
+# 1 "All companies in a country", including companies added later
+boss.post(f"/admin/users/{v8['v8user']}",data={"role":"USER","status":"ACTIVE","all_companies":[str(sg_cid)]})
+check("all companies: grant saved and implies the country",con.execute("SELECT all_companies FROM user_country_access WHERE user_id=? AND country_id=?",(v8["v8user"],sg_cid)).fetchone()[0]==1)
+boss.post(f"/admin/users/{v8['v8partial']}",data={"role":"USER","status":"ACTIVE","countries":[str(sg_cid)],"companies":sg_all})
+check("all companies: user sees every company in the country",sorted(cards(client("v8user"),country="Singapore"))==sorted(sg_all))
+con.execute("INSERT INTO companies(country_id,company_name) VALUES(?,?)",(sg_cid,"Added Later Pte Ltd")); con.commit()
+later=q("SELECT id FROM companies WHERE company_name='Added Later Pte Ltd'")
+check("all companies: a company added later is visible",client("v8user").get(f"/company/{later}").status_code==200)
+check("company-by-company grant: a company added later stays hidden",client("v8partial").get(f"/company/{later}").status_code==404)
+check("all companies: other countries stay hidden",not [i for i in cards(client("v8user"),q="a") if q("SELECT country_id FROM companies WHERE id=?",int(i))!=sg_cid])
+ao={u["username"]:u for u in A.dashboard.access_overview(con,A.SALES_FIELDS,A.access_sql)["users"]}
+check("all companies: access overview counts the company added later",ao["v8user"]["visible"]==len(sg_all)+1 and ao["v8partial"]["visible"]==len(sg_all))
+h=boss.get(f"/admin/users/{v8['v8user']}").data.decode()
+check("all companies: editor shows the switch ticked",f'name="all_companies" value="{sg_cid}" data-country="{sg_cid}" checked' in h)
+for hd in _logging.getLogger().handlers: hd.flush()
+check("all companies: audit log records the change","whole countries 0->1" in (TMP/"app.log").read_text(encoding="utf-8",errors="ignore"))
+boss.post(f"/admin/users/{v8['v8user']}",data={"role":"USER","status":"ACTIVE","countries":[str(sg_cid)]})
+check("all companies: unticking removes the grant",client("v8user").get(f"/company/{later}").status_code==404)
+boss.post(f"/admin/users/{v8['v8user']}",data={"role":"USER","status":"ACTIVE","all_companies":[str(sg_cid)]})
+con.execute("DELETE FROM companies WHERE id=?",(later,)); con.commit()
+
+# 2 + 3 Import preview, confirm and automatic backup
+def sg_state(): return con.execute("SELECT COUNT(*),MAX(updated_at) FROM companies WHERE country_id=?",(sg_cid,)).fetchone()[:]
+imports_before=q("SELECT COUNT(*) FROM imports"); state=sg_state()
+r=boss.post("/admin/imports/preview",data={"filename":"singapore.xlsx"})
+check("preview: renders what would change","Replace Singapore?" in r.data.decode() and r.status_code==200)
+check("preview: nothing is changed",sg_state()==state and q("SELECT COUNT(*) FROM imports")==imports_before)
+shutil.copy(TMP/"data/singapore.xlsx",TMP/"data/newland.xlsx")
+countries_before=q("SELECT COUNT(*) FROM countries")
+h=boss.post("/admin/imports/preview",data={"filename":"newland.xlsx"}).data.decode()
+check("preview: new country announced, not created","added as a new country" in h and q("SELECT COUNT(*) FROM countries")==countries_before)
+(TMP/"data/newland.xlsx").unlink()
+check("preview: data/ path outside the folder rejected",boss.post("/admin/imports/preview",data={"filename":"../app.py"}).status_code==400)
+def workbook(rows_keep=None,extra=None):
+    wb=load_workbook(TMP/"data/singapore.xlsx"); ws=wb.active
+    if rows_keep: ws.delete_rows(2+rows_keep,ws.max_row)
+    if extra:
+        r=ws.max_row+1
+        for col in range(1,ws.max_column+1): ws.cell(r,col,ws.cell(2,col).value)
+        hdr=[c.value for c in ws[1]]; ws.cell(r,hdr.index("Company Name Entity")+1,extra)
+    buf=io.BytesIO(); wb.save(buf); return buf.getvalue()
+def upload(data,name="singapore.xlsx",country="Singapore"):
+    return boss.post("/admin/imports",data={"file":(io.BytesIO(data),name),"country":country},content_type="multipart/form-data")
+pending=lambda h: re.search(r'name="pending" value="([^"]+)"',h).group(1)
+h=upload(workbook(extra="Preview New Co")).data.decode()
+check("upload preview: new company listed","Preview New Co" in h and "New companies" in h)
+check("upload preview: company-by-company users warned they will miss it","will not see the new companies" in h and ">v8partial</a>" in h and ">v8user</a>" not in h)
+p1=pending(h)
+check("upload preview: file kept for confirmation, nothing imported",(TMP/"imports"/p1).exists() and sg_state()==state)
+boss.post("/admin/imports/discard",data={"pending":p1})
+check("discard: pending file removed, nothing imported",not (TMP/"imports"/p1).exists() and q("SELECT COUNT(*) FROM imports")==imports_before)
+h=upload(workbook(rows_keep=1)).data.decode()
+check("upload preview: removals warned about","will be removed" in h and "Companies to be removed" in h)
+boss.post("/admin/imports/discard",data={"pending":pending(h)})
+check("confirm: invalid pending name rejected",boss.post("/admin/imports/upload/confirm",data={"pending":"../app.py"}).status_code==400)
+backups=lambda: sorted((TMP/"backups").glob("directory-*.db")) if (TMP/"backups").exists() else []
+n_backups=len(backups())
+h=upload(workbook(extra="Confirmed New Co")).data.decode(); p2=pending(h)
+r=boss.post("/admin/imports/upload/confirm",data={"pending":p2,"country":"Singapore"},follow_redirects=True).data.decode()
+check("confirm: import applied and pending file removed",q("SELECT COUNT(*) FROM companies WHERE company_name='Confirmed New Co'")==1 and not (TMP/"imports"/p2).exists())
+stat=lambda label: re.search(label+r"</span><strong[^>]*>(\d+)",h).group(1)
+check("confirm: import does what the preview promised and names the backup",f"{stat('New companies')} companies added, {stat('Removed companies')} removed" in r and "Backup saved as directory-" in r)
+check("backup: one copy written before the import",len(backups())==n_backups+1)
+bk=sqlite3.connect(backups()[-1])
+check("backup: copy is a readable database from before the import",bk.execute("SELECT COUNT(*) FROM companies WHERE company_name='Confirmed New Co'").fetchone()[0]==0); bk.close()
+for _ in range(12): A.backup_db("keep test")
+check("backup: only the newest 10 kept",len(backups())==10)
+real_backup=A.backup_db
+def failing(label): raise OSError("disk full")
+A.backup_db=failing; before=q("SELECT COUNT(*) FROM imports")
+r=boss.post("/admin/imports/seed",data={"filename":"singapore.xlsx"},follow_redirects=True).data.decode()
+A.backup_db=real_backup
+check("backup failure cancels the import",q("SELECT COUNT(*) FROM imports")==before and "backup could not be written" in r)
+check("imports page lists backups","Automatic backups" in boss.get("/admin/imports").data.decode() and backups()[-1].name in boss.get("/admin/imports").data.decode())
+
+# 4 Users change their own password
+me=client("v8user")
+check("account menu links to change password",'href="/account/password"' in me.get("/search").data.decode())
+other=client("v8user")
+def change(c,cur,new,confirm=None): return c.post("/account/password",data={"current_password":cur,"new_password":new,"confirm_password":new if confirm is None else confirm},follow_redirects=True).data.decode()
+check("password: wrong current password refused","current password is incorrect" in change(me,"wrong-password-x",PW+"x"))
+check("password: short new password refused","at least 12 characters" in change(me,PW,"short"))
+check("password: mismatched confirmation refused","do not match" in change(me,PW,"Brand-New-Pass-2026!","Something-Else-2026!"))
+upd=q("SELECT updated_at FROM users WHERE id=?",v8["v8user"])
+check("password: change succeeds","Password changed" in change(me,PW,"Brand-New-Pass-2026!"))
+check("password: this session stays signed in, others are signed out",me.get("/search").status_code==200 and other.get("/search").status_code==302)
+check("password: new password signs in, old one does not",client("v8user","Brand-New-Pass-2026!").get("/search").status_code==200 and client("v8user").get("/search").status_code==302)
+check("password: updated_at untouched (admin-edit marker)",q("SELECT updated_at FROM users WHERE id=?",v8["v8user"])==upd)
+A.FAILED_LOGINS.clear()
+t=client("v8user","Brand-New-Pass-2026!",ip="10.8.0.1")
+for _ in range(5): change(t,"wrong-password-x","Another-New-Pass-2026!")
+check("password: repeated wrong current passwords are throttled",t.post("/account/password",data={"current_password":"Brand-New-Pass-2026!","new_password":"Another-New-Pass-2026!","confirm_password":"Another-New-Pass-2026!"}).status_code==429)
+A.FAILED_LOGINS.clear()
+
+# 5 Search: country filter and the fields users can see
+india_ids=[str(r[0]) for r in con.execute("SELECT co.id FROM companies co JOIN countries cn ON cn.id=co.country_id WHERE cn.name='India' ORDER BY co.id")]
+got=[]; page=1
+while True:
+    ids_=cards(boss,country="India",page=page); got+=ids_
+    if not ids_ or len(got)>=len(india_ids) or page>20: break
+    page+=1
+check("country filter alone lists every company in that country",sorted(got,key=int)==india_ids)
+check("country filter narrows a text search",all(i in india_ids for i in cards(boss,q="logistics",country="India")) and cards(boss,q="logistics",country="India"))
+h=client("v8user","Brand-New-Pass-2026!").get("/search").data.decode()
+check("restricted user browses only granted countries",'href="/search?country=Singapore"' in h and 'country=India"' not in h)
+landline=q("SELECT landline_no FROM contacts ct JOIN companies co ON co.id=ct.company_id WHERE co.country_id=? AND landline_no IS NOT NULL LIMIT 1",sg_cid)
+check("user can search by landline, which the company page shows",bool(cards(client("v8user","Brand-New-Pass-2026!"),q=landline)))
+check("unknown country shows an empty result, not an error",client("v8user","Brand-New-Pass-2026!").get("/search?country=India").status_code==200 and not cards(client("v8user","Brand-New-Pass-2026!"),country="India"))
+
+# 6 Overview: default-password hash checked once per stored hash
+calls=[0]; real_check=A.check_password_hash
+def counting(h,p): calls[0]+=1; return real_check(h,p)
+A.check_password_hash=counting; A.DEFAULT_PW_CHECKED.clear()
+boss.get("/admin"); first=calls[0]; boss.get("/admin")
+A.check_password_hash=real_check
+check("overview: default passwords not re-hashed on every load",first>=1 and calls[0]==first)
+
+# 7 Delete asks once, with a specific question
+h=boss.get(f"/admin/users/{v8['v8partial']}").data.decode()
+check("delete user: one specific confirmation",'data-confirm="Delete this user permanently?' in h and "onsubmit" not in h)
+
+# 8 Records page
+rec=con.execute("SELECT id,company_name,agent_id FROM companies WHERE agent_id IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
+h=boss.get("/admin/records",query_string={"q":rec["company_name"]}).data.decode()
+check("records: rows link to the company page",f'href="/company/{rec["id"]}"' in h)
+check("records: agent ID searchable",boss.get("/admin/records",query_string={"q":rec["agent_id"]}).data.decode().count('class="table-link"')==q("SELECT COUNT(*) FROM companies WHERE agent_id LIKE ?","%"+rec["agent_id"]+"%"))
+check("records: country filter",all(c=="India" for c in re.findall(r"<td>(India|Singapore|Thailand|Usa)</td>",boss.get("/admin/records?country=India").data.decode())))
+A.RECORDS_PAGE=5
+h1=boss.get("/admin/records").data.decode(); h2=boss.get("/admin/records?page=2").data.decode()
+check("records: paginated instead of cut at 200","Showing <strong>1–5</strong>" in h1 and "Showing <strong>6–10</strong>" in h2 and 'aria-current="page">2<' in h2)
+A.RECORDS_PAGE=50
+
+# 9 Users list
+h=boss.get("/admin/users").data.decode()
+check("users: last sign-in shown, 'Never' for accounts that never signed in","Never" in h and "<time" in h)
+check("users: visible companies shown",f"{len(sg_all)} of " in h or "companies" in h)
+h=boss.get("/admin/users?q=v8part").data.decode()
+rows_=h.split("<tbody>")[1]
+check("users: filter",">v8partial<" in rows_ and ">v8admin<" not in rows_)
+
+# 10-12 Log rotation, friendly errors, readable dates
+check("log file rotates",any(isinstance(hd,A.RotatingFileHandler) for hd in _logging.getLogger().handlers))
+A.app.config["MAX_CONTENT_LENGTH"]=50
+r=upload(workbook())
+A.app.config["MAX_CONTENT_LENGTH"]=16*1024*1024
+check("too-large upload gets a friendly page",r.status_code==413 and b"16 MB upload limit" in r.data)
+check("bad request gets a friendly page",b"could not be processed" in boss.post("/admin/imports/upload/confirm",data={"pending":"nope"}).data)
+with A.app.test_request_context():
+    body,code=A.server_error(None)
+check("server error page renders",code==500 and "Something went wrong on our side" in body)
+check("dates shown in Philippine Time",">24 Sep 2026, 11:04 PHT<" in str(A.when("2026-09-24T03:04:10Z")) and A.when(None)=="—" and A.when("not a date")=="not a date")
 
 con.close()
 passed=sum(ok for _,ok in results)

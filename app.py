@@ -1,7 +1,9 @@
 import os, re, io, csv, sqlite3, logging, secrets, time, hashlib, hmac, subprocess, unicodedata
 from functools import wraps
 from pathlib import Path
-from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, Response
+from datetime import datetime, timedelta, timezone
+from logging.handlers import RotatingFileHandler
+from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, Response, g
 from markupsafe import Markup, escape
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -30,7 +32,9 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE","0")=="1",
                   MAX_CONTENT_LENGTH=16*1024*1024)
 csrf=CSRFProtect(app)
-logging.basicConfig(filename=ROOT/"app.log",level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
+# Rotated at 1 MB with 3 old files kept, so the log cannot fill the disk; the activity panel reads the current file.
+logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s",
+                    handlers=[RotatingFileHandler(ROOT/"app.log",maxBytes=1024*1024,backupCount=3,encoding="utf-8")])
 # Every character str.splitlines() breaks on; escaped so user input cannot start a forged log line.
 LOG_BREAKS=str.maketrans({ch:f"\\x{ord(ch):02x}" if ord(ch)<256 else f"\\u{ord(ch):04x}" for ch in "\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"})
 class SingleLineLog(logging.Filter):
@@ -75,7 +79,8 @@ def init_db():
             ("companies","city","TEXT"),("companies","state","TEXT"),
             ("contacts","contact_type","TEXT"),("contacts","landline_no","TEXT"),
             ("companies","source_data","TEXT"),("contacts","source_data","TEXT"),
-            ("users","first_name","TEXT"),("users","last_name","TEXT"),("companies","agent_id","TEXT")
+            ("users","first_name","TEXT"),("users","last_name","TEXT"),("companies","agent_id","TEXT"),
+            ("user_country_access","all_companies","INTEGER NOT NULL DEFAULT 0"),("users","last_login_at","TEXT")
         ]:
             existing={r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
             if column not in existing: c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
@@ -102,7 +107,7 @@ def init_db():
         # (updated_at moves on); from then on the admin's access settings are never overridden.
         kh=c.execute("SELECT id FROM users WHERE username='kharla' AND role='USER' AND updated_at IS created_at").fetchone()
         if kh:
-            for r in c.execute("SELECT id FROM countries").fetchall(): c.execute("INSERT OR IGNORE INTO user_country_access VALUES(?,?)",(kh["id"],r["id"]))
+            for r in c.execute("SELECT id FROM countries").fetchall(): c.execute("INSERT OR IGNORE INTO user_country_access(user_id,country_id) VALUES(?,?)",(kh["id"],r["id"]))
             for r in c.execute("SELECT id FROM companies").fetchall(): c.execute("INSERT OR IGNORE INTO user_company_access VALUES(?,?)",(kh["id"],r["id"]))
     # Records imported before full-row capture get their XLSX columns filled in place, keeping IDs.
     try:
@@ -126,6 +131,10 @@ def start_session(u):
     session.clear(); t=int(time.time())
     session.update(uid=u["id"],pwv=password_version(u["password_hash"]),started=t,seen=t)
 def current_user():
+    # Looked up once per request (the context processor and each decorator ask again).
+    if "current_user" not in g: g.current_user=load_current_user()
+    return g.current_user
+def load_current_user():
     if "uid" not in session: return None
     t=int(time.time())
     if t-session.get("seen",0)>SESSION_IDLE or t-session.get("started",0)>SESSION_MAX: session.clear(); return None
@@ -148,11 +157,16 @@ def admin_required(fn):
         return fn(*a,**kw)
     return wrap
 def access_sql(user,alias="co"):
+    """WHERE condition for the companies a user may see. A User needs the country, and either the company
+    or the country's "all companies" grant (which also covers companies added by later imports)."""
     if user["role"] in ("ADMIN","FULL_ACCESS"): return "1=1",[]
-    return f"""EXISTS(SELECT 1 FROM user_country_access uca WHERE uca.user_id=? AND uca.country_id={alias}.country_id)
-      AND EXISTS(SELECT 1 FROM user_company_access uca2 WHERE uca2.user_id=? AND uca2.company_id={alias}.id)""",[user["id"],user["id"]]
+    return f"""EXISTS(SELECT 1 FROM user_country_access uca WHERE uca.user_id=? AND uca.country_id={alias}.country_id
+      AND (uca.all_companies=1 OR EXISTS(SELECT 1 FROM user_company_access uca2 WHERE uca2.user_id=? AND uca2.company_id={alias}.id)))""",[user["id"],user["id"]]
 @app.context_processor
-def inject(): return {"user":current_user()}
+def inject():
+    # An error page must still render when the database itself is the problem.
+    try: return {"user":current_user()}
+    except sqlite3.Error: return {"user":None}
 @app.route("/")
 def home(): return redirect(url_for("search")) if current_user() else redirect(url_for("login"))
 # Failed sign-ins kept in memory per process for 15 minutes: 5 per (username, IP) locks that pair,
@@ -175,6 +189,7 @@ def login():
         valid=check_password_hash(u["password_hash"] if u else DUMMY_HASH,request.form.get("password",""))
         if u and valid and u["status"]=="ACTIVE":
             FAILED_LOGINS.pop(key,None)
+            with db() as c: c.execute("UPDATE users SET last_login_at=? WHERE id=?",(now(),u["id"]))
             start_session(u); logging.info("Successful login user=%s",u["username"]); return redirect(url_for("admin_dashboard") if u["role"]=="ADMIN" else url_for("search"))
         if len(FAILED_LOGINS)>10000:
             for k in [k for k,v in FAILED_LOGINS.items() if t-v[-1]>=LOGIN_WINDOW]: del FAILED_LOGINS[k]
@@ -188,13 +203,13 @@ FIELD_COLUMNS={"company_name":"co.company_name","city":"co.city","state":"co.sta
 FIELD_LABELS={"company_name":"Company Name Entity","city":"City","state":"State","country":"Country","network":"Network","contact_type":"Contact Type","name":"Name","job_position":"Job Position","email":"Email","phone":"Phone","landline_no":"Landline No","address":"Address"}
 # XLSX sales columns (field keys as built by utils.fields.columns) granted per USER via user_field_access.
 SALES_FIELDS={"x_kgsales":"Kargosmart Sales","x_pcsales":"Panda Cargo Sales","x_tisales":"Tri-Star Logistics Sales","x_kwsales":"KirinWorld Sales"}
-SEARCH_FIELDS=["company_name","network","city","state","country","contact_type","name","job_position","email","phone","address"]
+SEARCH_FIELDS=["company_name","network","city","state","country","contact_type","name","job_position","email","phone","landline_no","address"]
 def visible_fields(user):
+    """Every core column, plus the sales columns granted to a User (all of them for Admin/Full Access).
+    Search and the company page use the same list, so a user can search anything they can see."""
     if user["role"] in ("ADMIN","FULL_ACCESS"): return list(FIELD_COLUMNS)
-    with db() as c: granted=[r["field_name"] for r in c.execute("SELECT field_name FROM user_field_access WHERE user_id=?",(user["id"],))]
-    # Sales grants are added on top of the field list; they never replace its defaults.
-    fields=[f for f in granted if f not in SALES_FIELDS]; sales=[f for f in granted if f in SALES_FIELDS]
-    return (fields or ["company_name","city","state","country","contact_type","name","job_position","email","phone","address"])+sales
+    with db() as c: granted={r["field_name"] for r in c.execute("SELECT field_name FROM user_field_access WHERE user_id=?",(user["id"],))}
+    return list(FIELD_COLUMNS)+[f for f in SALES_FIELDS if f in granted]
 @app.template_filter("hl")
 def highlight(text,q):
     """Escape text and wrap the search terms in <mark>."""
@@ -203,6 +218,25 @@ def highlight(text,q):
     if not terms: return escape(text)
     parts=re.split("("+"|".join(re.escape(t) for t in terms)+")",text,flags=re.I)
     return Markup("".join(f"<mark>{escape(p)}</mark>" if i%2 else str(escape(p)) for i,p in enumerate(parts)))
+# Stored times are UTC; pages show Philippine Time. The Philippines has no daylight saving, so PHT is
+# always UTC+8 (a fixed offset also avoids needing the tzdata package on Windows).
+PHT=timezone(timedelta(hours=8),"PHT")
+@app.template_filter("when")
+def when(value):
+    """A stored UTC time ("2026-09-24T03:04:10Z") in Philippine Time ("24 Sep 2026, 11:04 PHT"), UTC value on hover."""
+    if not value: return "—"
+    try: d=datetime.fromisoformat(str(value).rstrip("Z")).replace(tzinfo=timezone.utc).astimezone(PHT)
+    except ValueError: return value
+    return Markup(f'<time datetime="{escape(value)}" title="{escape(value)} (UTC)">{d.day} {d:%b %Y, %H:%M} PHT</time>')
+def arg_int(name):
+    """Non-negative integer query parameter; 0 when missing or invalid."""
+    try: return max(0,int(request.args.get(name) or 0))
+    except ValueError: return 0
+def country_options(user):
+    """Countries the user can browse: every country for Admin/Full Access, granted ones for a User."""
+    with db() as c:
+        if user["role"] in ("ADMIN","FULL_ACCESS"): return [r["name"] for r in c.execute("SELECT name FROM countries ORDER BY name")]
+        return [r["name"] for r in c.execute("SELECT cn.name FROM countries cn JOIN user_country_access a ON a.country_id=cn.id WHERE a.user_id=? ORDER BY cn.name",(user["id"],))]
 def page_links(page,pages):
     """Page numbers around the current page, with None marking a gap."""
     keep=sorted({1,pages,*range(max(1,page-1),min(pages,page+1)+1)})
@@ -212,15 +246,40 @@ def page_links(page,pages):
         out.append(n)
     return out
 PAGE_SIZE=20; MAX_QUERY=200; MAX_TERMS=8
+@app.route("/account/password",methods=["GET","POST"])
+@login_required
+def account_password():
+    u=current_user()
+    if request.method=="POST":
+        # Wrong current passwords count toward the same throttle as failed sign-ins.
+        key=(u["username"].lower(),client_ip()); t=time.time()
+        recent=[x for x in FAILED_LOGINS.get(key,[]) if t-x<LOGIN_WINDOW]
+        if len(recent)>=LOGIN_LIMIT:
+            flash("Too many incorrect attempts. Try again in 15 minutes.","error"); return render_template("account_password.html"),429
+        with db() as c: row=c.execute("SELECT id,password_hash FROM users WHERE id=?",(u["id"],)).fetchone()
+        current=request.form.get("current_password",""); new=request.form.get("new_password","")
+        if not check_password_hash(row["password_hash"],current):
+            FAILED_LOGINS[key]=recent+[t]; logging.warning("Failed password change user=%s ip=%s",u["username"],key[1])
+            flash("Your current password is incorrect.","error")
+        elif len(new)<12: flash("The new password must be at least 12 characters.","error")
+        elif new!=request.form.get("confirm_password",""): flash("The new passwords do not match.","error")
+        elif new==current: flash("Choose a password different from your current one.","error")
+        else:
+            # updated_at is left alone: it marks admin edits (see the kharla rule in init_db).
+            with db() as c:
+                c.execute("UPDATE users SET password_hash=? WHERE id=?",(generate_password_hash(new),u["id"]))
+                start_session(c.execute("SELECT id,password_hash FROM users WHERE id=?",(u["id"],)).fetchone())
+            logging.info("User %s changed own password",u["username"])
+            flash("Password changed. Any other devices signed in to your account have been signed out.","success")
+            return redirect(url_for("account_password"))
+    return render_template("account_password.html")
 @app.route("/search")
 @login_required
 def search():
     q=request.args.get("q","").strip()[:MAX_QUERY]
+    country=request.args.get("country","").strip()[:100]
     # Each word adds a condition per column; long queries are cut to keep SQL small and fast.
     terms=q.split()[:MAX_TERMS]
-    def arg_int(name):
-        try: return max(0,int(request.args.get(name) or 0))
-        except ValueError: return 0
     # Older links use ?offset=<row>; they open the page holding that row.
     page=arg_int("page") or arg_int("offset")//PAGE_SIZE+1
     user=current_user(); clause,params=access_sql(user); fields=visible_fields(user)
@@ -228,8 +287,10 @@ def search():
     # Agent ID is shown to everyone who can open the company, so it is always searchable.
     cols=["co.agent_id"]+[FIELD_COLUMNS[f] for f in SEARCH_FIELDS if f in fields]
     rows=[]; previews={}; total=0; pages=1
-    if q:
+    # A country on its own lists all of that country's companies the user may see.
+    if q or country:
         where=clause
+        if country: where+=" AND cn.name=? COLLATE NOCASE"; params.append(country)
         for term in terms:
             if not cols: where+=" AND 0"; continue
             where+=" AND ("+" OR ".join(col+" LIKE ? COLLATE NOCASE" for col in cols)+")"
@@ -242,12 +303,12 @@ def search():
             total=c.execute("SELECT COUNT(*) FROM ("+sql+")",params).fetchone()[0]
             pages=max(1,-(-total//PAGE_SIZE)); page=min(page,pages)
             # An exact Agent ID match (e.g. SGP001) comes before partial ones (SGP0010, SGP0011...).
-            exact=f"co.agent_id COLLATE NOCASE IN ({','.join('?'*len(terms))})"
-            rows=c.execute(sql+f" ORDER BY {exact} DESC,cn.name,co.company_name COLLATE NOCASE LIMIT ? OFFSET ?",params+terms+[PAGE_SIZE,(page-1)*PAGE_SIZE]).fetchall()
+            exact=f"co.agent_id COLLATE NOCASE IN ({','.join('?'*len(terms))}) DESC," if terms else ""
+            rows=c.execute(sql+f" ORDER BY {exact}cn.name,co.company_name COLLATE NOCASE LIMIT ? OFFSET ?",params+terms+[PAGE_SIZE,(page-1)*PAGE_SIZE]).fetchall()
             ids=[r["preview_id"] for r in rows if r["preview_id"]]
             if ids: previews={r["id"]:r for r in c.execute(f"SELECT id,name,job_position,email,phone FROM contacts WHERE id IN ({','.join('?'*len(ids))})",ids)}
     start=(page-1)*PAGE_SIZE+1 if total else 0
-    return render_template("search.html",rows=rows,previews=previews,q=q,terms_cut=len(q.split())>len(terms),fields=fields,field_labels=FIELD_LABELS,
+    return render_template("search.html",rows=rows,previews=previews,q=q,country=country,countries=country_options(user),terms_cut=len(q.split())>len(terms),fields=fields,field_labels=FIELD_LABELS,
                            total=total,page=page,pages=pages,page_links=page_links(page,pages),start=start,end=start+len(rows)-1 if rows else 0)
 @app.route("/company/<int:company_id>")
 @login_required
@@ -259,7 +320,6 @@ def company(company_id):
         contacts=c.execute("SELECT * FROM contacts WHERE company_id=? ORDER BY id",(company_id,)).fetchall()
     full=u["role"] in ("ADMIN","FULL_ACCESS")
     # Users see every column Admin/Full Access see, except sales columns not granted on the Admin Page.
-    if not full: fields=list(FIELD_COLUMNS)+[f for f in fields if f in SALES_FIELDS]
     detail=build_company_detail(co,contacts,lambda key: full or key not in SALES_FIELDS or key in fields)
     ref=request.referrer or ""
     back=ref if ref.startswith(request.host_url.rstrip("/")+url_for("search")) else url_for("search")
@@ -268,8 +328,20 @@ def company(company_id):
 def forbidden(e): return render_template("error.html",message="You do not have permission to access this page."),403
 @app.errorhandler(404)
 def notfound(e): return render_template("error.html",message="The requested directory record was not found."),404
+@app.errorhandler(400)
+def bad_request(e): return render_template("error.html",message="The form could not be processed, possibly because it expired. Go back, reload the page and try again."),400
+@app.errorhandler(413)
+def too_large(e): return render_template("error.html",message="That file is larger than the 16 MB upload limit."),413
+@app.errorhandler(500)
+def server_error(e): return render_template("error.html",message="Something went wrong on our side. The error has been logged; please try again."),500
 
 DEFAULT_PASSWORDS={"admin":"ChangeMe-Admin-2026!","kharla":"ChangeMe-Kharla-2026!"}
+# Password hashing is deliberately slow (~0.13 s), so each stored hash is checked once, not on every overview load.
+DEFAULT_PW_CHECKED={}
+def uses_default_password(username,password_hash):
+    key=(username,password_hash)
+    if key not in DEFAULT_PW_CHECKED: DEFAULT_PW_CHECKED[key]=check_password_hash(password_hash,DEFAULT_PASSWORDS[username])
+    return DEFAULT_PW_CHECKED[key]
 @app.route("/admin")
 @admin_required
 def admin_dashboard():
@@ -277,7 +349,7 @@ def admin_dashboard():
         stats={"users":c.execute("SELECT COUNT(*) FROM users").fetchone()[0],"countries":c.execute("SELECT COUNT(*) FROM countries").fetchone()[0],"companies":c.execute("SELECT COUNT(*) FROM companies").fetchone()[0],"contacts":c.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]}
         imports=c.execute("SELECT * FROM imports ORDER BY id DESC LIMIT 8").fetchall()
         # Accounts still using the documented initial passwords.
-        default_pw=[u for u,p in DEFAULT_PASSWORDS.items() if (r:=c.execute("SELECT password_hash FROM users WHERE username=? AND status='ACTIVE'",(u,)).fetchone()) and check_password_hash(r["password_hash"],p)]
+        default_pw=[u for u in DEFAULT_PASSWORDS if (r:=c.execute("SELECT password_hash FROM users WHERE username=? AND status='ACTIVE'",(u,)).fetchone()) and uses_default_password(u,r["password_hash"])]
         def panel(name,fn):
             # A failing panel shows an error box instead of breaking the whole overview.
             try: return {"data":fn(c),"error":None}
@@ -285,7 +357,7 @@ def admin_dashboard():
                 logging.exception("Dashboard panel failed: %s",name); return {"data":None,"error":True}
         panels={"attention":panel("attention",dashboard.attention),"quality":panel("quality",dashboard.data_quality),"breakdown":panel("breakdown",dashboard.breakdown),
                 "sales":panel("sales",lambda c: dashboard.sales_coverage(c,SALES_FIELDS)),
-                "access":panel("access",lambda c: dashboard.access_overview(c,SALES_FIELDS)),
+                "access":panel("access",lambda c: dashboard.access_overview(c,SALES_FIELDS,access_sql)),
                 "imports":panel("imports",lambda c: dashboard.import_health(c,DATA)),
                 "activity":panel("activity",lambda c: dashboard.activity(c,ROOT/"app.log"))}
     return render_template("admin/dashboard.html",stats=stats,imports=imports,default_pw=default_pw,panels=panels)
@@ -302,8 +374,16 @@ def admin_export(kind):
 @app.route("/admin/users")
 @admin_required
 def users():
-    with db() as c: rows=c.execute("SELECT id,username,role,status,created_at FROM users ORDER BY username").fetchall()
-    return render_template("admin/users.html",users=rows)
+    q=request.args.get("q","").strip()
+    with db() as c:
+        total=c.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
+        rows=[]
+        for r in c.execute("SELECT id,username,first_name,last_name,role,status,created_at,last_login_at FROM users ORDER BY username COLLATE NOCASE").fetchall():
+            clause,params=access_sql(r)
+            rows.append({**dict(r),"display_name":display_name(r),
+                         "visible":total if r["role"]!="USER" else c.execute(f"SELECT COUNT(*) FROM companies co WHERE {clause}",params).fetchone()[0]})
+    shown=[r for r in rows if q.lower() in " ".join((r["username"],r["display_name"],r["role"],r["status"])).lower()] if q else rows
+    return render_template("admin/users.html",users=shown,q=q,total_users=len(rows),total_companies=total)
 @app.route("/admin/users/create",methods=["GET","POST"])
 @admin_required
 def user_create():
@@ -320,7 +400,13 @@ def user_create():
                 logging.info("Admin %s created user %s role=%s",current_user()["username"],username,role)
                 flash("User created. Assign access below.","success"); return redirect(url_for("user_edit",uid=get_user_id(username)))
             except sqlite3.IntegrityError: flash("That username already exists.","error")
-    return render_template("admin/user_edit.html",target=None,countries=get_countries(),selected_countries=[],selected_companies=[])
+    return render_template("admin/user_edit.html",target=None,countries=get_countries(),selected_countries=[],selected_all=[],selected_companies=[])
+def access_summary(c,uid):
+    """Grant counts for the audit log line written when a user is saved."""
+    return {"countries":c.execute("SELECT COUNT(*) FROM user_country_access WHERE user_id=?",(uid,)).fetchone()[0],
+            "whole countries":c.execute("SELECT COUNT(*) FROM user_country_access WHERE user_id=? AND all_companies=1",(uid,)).fetchone()[0],
+            "companies":c.execute("SELECT COUNT(*) FROM user_company_access WHERE user_id=?",(uid,)).fetchone()[0],
+            "sales":sorted(r["field_name"] for r in c.execute("SELECT field_name FROM user_field_access WHERE user_id=?",(uid,)) if r["field_name"] in SALES_FIELDS)}
 def get_user_id(username):
     with db() as c: return c.execute("SELECT id FROM users WHERE username=?",(username,)).fetchone()["id"]
 def get_countries():
@@ -343,18 +429,18 @@ def user_edit(uid):
             admin=current_user()
             if uid==admin["id"] and (role!="ADMIN" or status!="ACTIVE"):
                 flash("You cannot remove admin access from, or disable, your own account. No changes were saved.","error"); return redirect(url_for("user_edit",uid=uid))
-            before={"countries":c.execute("SELECT COUNT(*) FROM user_country_access WHERE user_id=?",(uid,)).fetchone()[0],
-                    "companies":c.execute("SELECT COUNT(*) FROM user_company_access WHERE user_id=?",(uid,)).fetchone()[0],
-                    "sales":sorted(r["field_name"] for r in c.execute("SELECT field_name FROM user_field_access WHERE user_id=?",(uid,)) if r["field_name"] in SALES_FIELDS)}
+            before=access_summary(c,uid)
             c.execute("UPDATE users SET first_name=?,last_name=?,role=?,status=?,updated_at=? WHERE id=?",(*names,role,status,now(),uid))
             if pw: c.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",(generate_password_hash(pw),now(),uid))
             # A password change ends every session of that account; keep the admin's own session going.
             if pw and uid==admin["id"]: start_session(c.execute("SELECT id,password_hash FROM users WHERE id=?",(uid,)).fetchone())
             c.execute("DELETE FROM user_country_access WHERE user_id=?",(uid,)); c.execute("DELETE FROM user_company_access WHERE user_id=?",(uid,))
             known={r["id"] for r in c.execute("SELECT id FROM countries")}
-            countries=[int(x) for x in request.form.getlist("countries") if x.isdigit() and int(x) in known]
+            # "All companies" for a country also grants the country itself.
+            whole={int(x) for x in request.form.getlist("all_companies") if x.isdigit() and int(x) in known}
+            countries=sorted({int(x) for x in request.form.getlist("countries") if x.isdigit() and int(x) in known}|whole)
             companies=[int(x) for x in request.form.getlist("companies") if x.isdigit()]
-            for x in countries: c.execute("INSERT OR IGNORE INTO user_country_access VALUES(?,?)",(uid,x))
+            for x in countries: c.execute("INSERT OR IGNORE INTO user_country_access(user_id,country_id,all_companies) VALUES(?,?,?)",(uid,x,int(x in whole)))
             # Only store companies belonging to selected countries; query validation prevents bypass.
             if countries:
                 marks=",".join("?"*len(countries))
@@ -367,9 +453,7 @@ def user_edit(uid):
             for f in request.form.getlist("sales_fields"):
                 if f in SALES_FIELDS: c.execute("INSERT OR IGNORE INTO user_field_access VALUES(?,?)",(uid,f))
             flash("User and access settings saved.","success")
-            after={"countries":c.execute("SELECT COUNT(*) FROM user_country_access WHERE user_id=?",(uid,)).fetchone()[0],
-                   "companies":c.execute("SELECT COUNT(*) FROM user_company_access WHERE user_id=?",(uid,)).fetchone()[0],
-                   "sales":sorted(r["field_name"] for r in c.execute("SELECT field_name FROM user_field_access WHERE user_id=?",(uid,)) if r["field_name"] in SALES_FIELDS)}
+            after=access_summary(c,uid)
             changes=[f"{k} {a}->{b}" for k,a,b in (("role",target["role"],role),("status",target["status"],status)) if a!=b]
             changes+=[f"{k} {before[k]}->{after[k]}" for k in before if before[k]!=after[k]]
             if names!=((target["first_name"] or ""),(target["last_name"] or "")): changes.append("name updated")
@@ -377,10 +461,11 @@ def user_edit(uid):
             logging.info("Admin %s updated user %s (id=%s): %s",admin["username"],target["username"],uid,"; ".join(changes) or "no changes")
             return redirect(url_for("user_edit",uid=uid))
         allco=c.execute("SELECT co.id,co.company_name,co.country_id,cn.name country FROM companies co JOIN countries cn ON cn.id=co.country_id ORDER BY cn.name,co.company_name").fetchall()
-        sc={r["country_id"] for r in c.execute("SELECT country_id FROM user_country_access WHERE user_id=?",(uid,))}
+        grants=c.execute("SELECT country_id,all_companies FROM user_country_access WHERE user_id=?",(uid,)).fetchall()
+        sc={r["country_id"] for r in grants}; sa={r["country_id"] for r in grants if r["all_companies"]}
         sm={r["company_id"] for r in c.execute("SELECT company_id FROM user_company_access WHERE user_id=?",(uid,))}
         ss={r["field_name"] for r in c.execute("SELECT field_name FROM user_field_access WHERE user_id=?",(uid,))}&set(SALES_FIELDS)
-    return render_template("admin/user_edit.html",target=target,countries=get_countries(),selected_countries=sc,selected_companies=sm,companies=allco,sales_fields=SALES_FIELDS,selected_sales=ss)
+    return render_template("admin/user_edit.html",target=target,countries=get_countries(),selected_countries=sc,selected_all=sa,selected_companies=sm,companies=allco,sales_fields=SALES_FIELDS,selected_sales=ss)
 @app.post("/admin/users/<int:uid>/delete")
 @admin_required
 def user_delete(uid):
@@ -392,55 +477,103 @@ def user_delete(uid):
         if gone: logging.info("Admin %s deleted user %s (id=%s)",current_user()["username"],gone["username"],uid)
         flash("User deleted.","success")
     return redirect(url_for("users"))
+# Imports replace a country's whole dataset, so each one is previewed first (a trial run that is rolled
+# back) and the database is backed up just before the real import.
+BACKUPS=ROOT/"backups"; BACKUP_KEEP=10
+PENDING=re.compile(r"[0-9a-f]{12}_[A-Za-z0-9_.-]+\.xlsx")
+def backup_db(label):
+    """Consistent copy of the live database in backups/; only the newest BACKUP_KEEP are kept."""
+    BACKUPS.mkdir(exist_ok=True)
+    dest=BACKUPS/f"directory-{time.strftime('%Y%m%d-%H%M%S',time.gmtime())}-{secrets.token_hex(2)}-{re.sub(r'[^A-Za-z0-9]+','-',label).strip('-')[:40]}.db"
+    src=sqlite3.connect(DB); out=sqlite3.connect(dest)
+    try: src.backup(out)
+    finally: out.close(); src.close()
+    for old in sorted(BACKUPS.glob("directory-*.db"))[:-BACKUP_KEEP]: old.unlink(missing_ok=True)
+    return dest.name
+def record_import(source,country,status,result=None):
+    with db() as c:
+        if result: c.execute("INSERT INTO imports(source_file,country,status,records_processed,records_imported,duplicates_found,errors_found,imported_at) VALUES(?,?,?,?,?,?,?,?)",
+                             (source,country,status,result["processed"],result["imported"],result["duplicates"],len(result["errors"]),now()))
+        else: c.execute("INSERT INTO imports(source_file,country,status,errors_found,imported_at) VALUES(?,?,?,?,?)",(source,country,status,1,now()))
+def run_import(path,source,country):
+    """Back up, then replace the country's data with the workbook; the outcome goes to import history."""
+    try: backup=backup_db(country)
+    except Exception:
+        logging.exception("Backup before import failed file=%s",source)
+        flash("Import cancelled: the database backup could not be written, so nothing was changed.","error"); return
+    try: result=import_workbook(path,DB,country,replace_country=True)
+    except Exception as e:
+        logging.exception("Import failed file=%s",source); record_import(source,country,"FAILED")
+        flash(f"{source}: import rejected; previous active dataset was kept. {e}","error"); return
+    record_import(source,country,"COMPLETED",result); ch=result["changes"]
+    logging.info("Admin %s imported %s rows=%s added=%s removed=%s backup=%s",current_user()["username"],source,result["imported"],len(ch["added"]),len(ch["removed"]),backup)
+    flash(f"{result['country']} replaced from {source}: {result['imported']} contact rows, {len(ch['added'])} companies added, {len(ch['removed'])} removed. Backup saved as {backup}.","success")
+    if result["errors"]: flash("Import issues: "+"; ".join(result["errors"][:5]),"error")
+def preview_import(path,source,country,confirm):
+    """What importing would change, without changing anything. confirm: hidden fields for the confirm form."""
+    try: result=import_workbook(path,DB,country,replace_country=True,dry_run=True)
+    except Exception as e:
+        logging.warning("Import preview failed file=%s: %s",source,e)
+        flash(f"{source} cannot be imported: {e}","error"); return None
+    with db() as c:
+        cid=c.execute("SELECT id FROM countries WHERE name=? COLLATE NOCASE",(result["country"],)).fetchone()
+        # Users who get this country company by company will not see companies the import adds.
+        partial=[] if not cid else c.execute("""SELECT u.id,u.username FROM users u JOIN user_country_access a ON a.user_id=u.id
+            WHERE a.country_id=? AND a.all_companies=0 AND u.role='USER' ORDER BY u.username COLLATE NOCASE""",(cid["id"],)).fetchall()
+        stale=next((f for f in dashboard.import_health(c,DATA)["stale"] if f["name"]==source),None) if "filename" in confirm else None
+    return render_template("admin/import_preview.html",r=result,source=source,partial=partial,stale=stale,confirm=confirm)
 @app.route("/admin/imports",methods=["GET","POST"])
 @admin_required
 def imports_page():
     if request.method=="POST":
         uploaded=request.files.get("file")
         if not uploaded or not uploaded.filename.lower().endswith(".xlsx"):
-            flash("Choose a valid .xlsx file.","error")
-        else:
-            name=secure_filename(uploaded.filename)
-            if not name or ".." in name: abort(400)
-            dest=IMPORTS/(secrets.token_hex(6)+"_"+name); uploaded.save(dest)
-            country=(request.form.get("country") or "").strip() or detect_country(name)
-            try:
-                result=import_workbook(dest,DB,country,replace_country=True)
-                with db() as c:
-                    c.execute("INSERT INTO imports(source_file,country,status,records_processed,records_imported,duplicates_found,errors_found,imported_at) VALUES(?,?,?,?,?,?,?,?)",
-                    (name,country,"COMPLETED",result["processed"],result["imported"],result["duplicates"],len(result["errors"]),now()))
-                logging.info("Admin %s imported %s rows=%s",current_user()["username"],name,result["imported"])
-                flash(f"Country dataset replaced: {result['imported']} rows loaded.", "success")
-                if result["errors"]: flash("Import issues: "+"; ".join(result["errors"][:5]),"error")
-            except Exception as e:
-                logging.exception("Import failed file=%s",name)
-                with db() as c: c.execute("INSERT INTO imports(source_file,country,status,errors_found,imported_at) VALUES(?,?,?,?,?)",(name,country,"FAILED",1,now()))
-                flash(f"Upload rejected; previous active dataset was kept. {str(e)}","error")
-            finally:
-                try: dest.unlink()
-                except OSError: pass
+            flash("Choose a valid .xlsx file.","error"); return redirect(url_for("imports_page"))
+        name=secure_filename(uploaded.filename)
+        if not name or ".." in name: abort(400)
+        dest=IMPORTS/(secrets.token_hex(6)+"_"+name); uploaded.save(dest)
+        country=(request.form.get("country") or "").strip() or detect_country(name)
+        page=preview_import(dest,name,country,{"action":url_for("import_upload_confirm"),"pending":dest.name,"country":country})
+        if page: return page
+        dest.unlink(missing_ok=True); return redirect(url_for("imports_page"))
+    # Uploads previewed but never confirmed or cancelled are removed after a day.
+    for old in IMPORTS.glob("*.xlsx"):
+        if time.time()-old.stat().st_mtime>86400: old.unlink(missing_ok=True)
     files=sorted(p.name for p in DATA.glob("*.xlsx"))
     with db() as c: history=c.execute("SELECT * FROM imports ORDER BY id DESC LIMIT 30").fetchall()
-    return render_template("admin/imports.html",files=files,history=history)
-
+    backups=[{"name":b.name,"size":b.stat().st_size} for b in sorted(BACKUPS.glob("directory-*.db"),reverse=True)] if BACKUPS.exists() else []
+    return render_template("admin/imports.html",files=files,history=history,backups=backups)
+def seed_path(filename):
+    path=(DATA/filename).resolve()
+    if path.parent!=DATA.resolve() or path.suffix.lower()!=".xlsx" or not path.exists(): abort(400)
+    return path
+def pending_path():
+    name=request.form.get("pending","")
+    if not PENDING.fullmatch(name) or not (IMPORTS/name).exists(): abort(400)
+    return IMPORTS/name
+@app.post("/admin/imports/preview")
+@admin_required
+def import_preview():
+    filename=request.form.get("filename","")
+    return preview_import(seed_path(filename),filename,detect_country(filename),{"action":url_for("import_seed"),"filename":filename}) or redirect(url_for("imports_page"))
 @app.post("/admin/imports/seed")
 @admin_required
 def import_seed():
     filename=request.form.get("filename","")
-    path=(DATA/filename).resolve()
-    if path.parent!=DATA.resolve() or path.suffix.lower()!=".xlsx" or not path.exists(): abort(400)
-    country=detect_country(filename)
-    try: result=import_workbook(path,DB,country,replace_country=True)
-    except Exception as e:
-        logging.exception("Import failed file=%s",filename)
-        with db() as c: c.execute("INSERT INTO imports(source_file,country,status,errors_found,imported_at) VALUES(?,?,?,?,?)",(filename,country,"FAILED",1,now()))
-        flash(f"{filename}: import rejected; previous active dataset was kept. {str(e)}","error")
-        return redirect(url_for("imports_page"))
-    with db() as c:
-        c.execute("INSERT INTO imports(source_file,country,status,records_processed,records_imported,duplicates_found,errors_found,imported_at) VALUES(?,?,?,?,?,?,?,?)",(filename,country,"COMPLETED",result["processed"],result["imported"],result["duplicates"],len(result["errors"]),now()))
-    logging.info("Admin %s imported %s rows=%s",current_user()["username"],filename,result["imported"])
-    flash(f"{filename}: replaced with {result['imported']} row records.","success")
-    if result["errors"]: flash("Import issues: "+"; ".join(result["errors"][:5]),"error")
+    run_import(seed_path(filename),filename,detect_country(filename))
+    return redirect(url_for("imports_page"))
+@app.post("/admin/imports/upload/confirm")
+@admin_required
+def import_upload_confirm():
+    path=pending_path()
+    try: run_import(path,path.name[13:],(request.form.get("country") or "").strip() or detect_country(path.name[13:]))
+    finally: path.unlink(missing_ok=True)
+    return redirect(url_for("imports_page"))
+@app.post("/admin/imports/discard")
+@admin_required
+def import_discard():
+    if PENDING.fullmatch(request.form.get("pending","")): (IMPORTS/request.form["pending"]).unlink(missing_ok=True)
+    flash("Import cancelled. Nothing was changed.","success")
     return redirect(url_for("imports_page"))
 @app.route("/admin/database")
 @admin_required
@@ -449,13 +582,23 @@ def database_status():
         countries=c.execute("SELECT cn.name,COUNT(DISTINCT co.id) companies,COUNT(ct.id) contacts,MAX(co.updated_at) updated FROM countries cn LEFT JOIN companies co ON co.country_id=cn.id LEFT JOIN contacts ct ON ct.company_id=co.id GROUP BY cn.id ORDER BY cn.name").fetchall()
         last=c.execute("SELECT * FROM imports ORDER BY id DESC LIMIT 1").fetchone()
     return render_template("admin/database.html",countries=countries,size=DB.stat().st_size if DB.exists() else 0,last=last)
+RECORDS_PAGE=50
 @app.route("/admin/records")
 @admin_required
 def admin_records():
-    q=request.args.get("q","").strip()
+    q=request.args.get("q","").strip()[:MAX_QUERY]; country=request.args.get("country","").strip()[:100]
+    where="(co.company_name LIKE ? COLLATE NOCASE OR co.agent_id LIKE ? COLLATE NOCASE)"; params=["%"+q+"%"]*2
+    if country: where+=" AND cn.name=? COLLATE NOCASE"; params.append(country)
+    base=f"FROM companies co JOIN countries cn ON cn.id=co.country_id WHERE {where}"
     with db() as c:
-        rows=c.execute("SELECT co.company_name,cn.name country,co.network,co.contact_type,co.source_file,co.source_row FROM companies co JOIN countries cn ON cn.id=co.country_id WHERE co.company_name LIKE ? COLLATE NOCASE ORDER BY cn.name,co.company_name LIMIT 200",("%"+q+"%",)).fetchall()
-    return render_template("admin/records.html",rows=rows,q=q)
+        total=c.execute(f"SELECT COUNT(*) {base}",params).fetchone()[0]
+        pages=max(1,-(-total//RECORDS_PAGE)); page=min(max(1,arg_int("page")),pages)
+        rows=c.execute(f"""SELECT co.id,co.agent_id,co.company_name,cn.name country,co.network,co.source_file,co.source_row,co.updated_at,
+            (SELECT COUNT(*) FROM contacts ct WHERE ct.company_id=co.id) contacts {base}
+            ORDER BY cn.name,co.company_name COLLATE NOCASE LIMIT ? OFFSET ?""",params+[RECORDS_PAGE,(page-1)*RECORDS_PAGE]).fetchall()
+    start=(page-1)*RECORDS_PAGE+1 if total else 0
+    return render_template("admin/records.html",rows=rows,q=q,country=country,countries=[r["name"] for r in get_countries()],
+                           total=total,page=page,pages=pages,page_links=page_links(page,pages),start=start,end=start+len(rows)-1 if rows else 0)
 # Auto-deploy: GitHub calls /deploy on each push; the route pulls the new code and touches the WSGI
 # file so PythonAnywhere reloads. Disabled (404) unless DEPLOY_SECRET is set.
 DEPLOY_SECRET=os.environ.get("DEPLOY_SECRET","")

@@ -17,7 +17,7 @@
       <div class="user-badges">
         <span class="badge role-badge role-{{target.role|lower}}">{{role_names.get(target.role,target.role)}}</span>
         <span class="badge {{'good' if target.status=='ACTIVE' else 'bad'}}">{{'Active' if target.status=='ACTIVE' else 'Disabled'}}</span>
-        {% if target.role=='USER' %}<span class="badge neutral">{{selected_countries|length}} countries · {{selected_companies|length}} companies · {{selected_sales|length}} of {{sales_fields|length}} sales columns</span>{% endif %}
+        {% if target.role=='USER' %}<span class="badge neutral">{{selected_countries|length}} countries{% if selected_all %} ({{selected_all|length}} with all companies){% endif %} · {{selected_companies|length}} companies · {{selected_sales|length}} of {{sales_fields|length}} sales columns</span>{% endif %}
       </div>
       {% else %}
       <p class="muted">Create the account first; access settings can be adjusted after it is saved.</p>
@@ -79,7 +79,7 @@
     <header class="card-head">
       <div>
         <h2 id="card-directory">Directory access</h2>
-        <p class="muted">A User needs both country access and company access to view a record.</p>
+        <p class="muted">A User needs country access and, within it, either all companies or the individual companies ticked below.</p>
       </div>
     </header>
     <p class="role-note">This account's user type can view every record; country and company selections only apply to <strong>User</strong>.</p>
@@ -89,9 +89,9 @@
     <div class="check-grid">{% for c in countries %}<label class="checkrow"><input type="checkbox" name="countries" value="{{c.id}}" {% if c.id in selected_countries %}checked{% endif %}><span>{{c.name}}</span></label>{% else %}<p class="muted">Import a workbook to add countries.</p>{% endfor %}</div>
 
     <div class="subhead separated"><h3>Companies</h3><span class="count-pill" data-count-for="companies">{{selected_companies|length}} of {{(companies|default([]))|length}}</span></div>
-    <p class="field-help">Only companies in selected countries are saved.</p>
+    <p class="field-help">Only companies in selected countries are saved. “All companies” also covers companies added by future imports, so you don't have to update this user after each import.</p>
     <label class="checkrow select-all"><input type="checkbox" data-select-all="companies"><span><strong>Select all companies</strong></span></label>
-    <div class="company-access">{% for country in countries %}{% set cos=(companies|default([]))|selectattr('country_id','equalto',country.id)|list %}<details><summary><span>{{country.name}}</span><span class="summary-count">{{cos|selectattr('id','in',selected_companies)|list|length}} of {{cos|length}} selected</span></summary><div class="check-grid">{% for co in cos %}<label class="checkrow"><input type="checkbox" name="companies" value="{{co.id}}" {% if co.id in selected_companies %}checked{% endif %}><span>{{co.company_name}}</span></label>{% endfor %}</div></details>{% endfor %}</div>
+    <div class="company-access">{% for country in countries %}{% set cos=(companies|default([]))|selectattr('country_id','equalto',country.id)|list %}<details{% if country.id in selected_all %} data-all{% endif %}><summary><span>{{country.name}}</span><span class="summary-count">{{cos|selectattr('id','in',selected_companies)|list|length}} of {{cos|length}} selected</span></summary><label class="checkrow all-row"><input type="checkbox" name="all_companies" value="{{country.id}}" data-country="{{country.id}}" {% if country.id in selected_all %}checked{% endif %}><span><strong>All companies in {{country.name}}</strong>, including companies added by future imports</span></label><div class="check-grid">{% for co in cos %}<label class="checkrow"><input type="checkbox" name="companies" value="{{co.id}}" {% if co.id in selected_companies %}checked{% endif %}><span>{{co.company_name}}</span></label>{% endfor %}</div></details>{% endfor %}</div>
   </section>
 
   <div class="save-bar">
@@ -106,7 +106,7 @@
     <h2 id="card-danger">Delete user</h2>
     <p class="muted">Permanently removes this account and all of its access settings.</p>
   </div>
-  <form method="post" action="{{url_for('user_delete',uid=target.id)}}" onsubmit="return confirm('Delete this user?')" class="delete-form"><input type="hidden" name="csrf_token" value="{{csrf_token()}}"><button class="danger">Delete user</button></form>
+  <form method="post" action="{{url_for('user_delete',uid=target.id)}}" data-confirm="Delete this user permanently? This cannot be undone." class="delete-form"><input type="hidden" name="csrf_token" value="{{csrf_token()}}"><button class="danger">Delete user</button></form>
 </section>
 {% endif %}
 
@@ -130,9 +130,16 @@ function refresh() {
   });
   document.querySelectorAll('.company-access details').forEach(group => {
     const boxes = [...group.querySelectorAll('input[name="companies"]')];
-    group.querySelector('.summary-count').textContent = boxes.filter(b => b.checked).length + ' of ' + boxes.length + ' selected';
+    const all = group.querySelector('input[name="all_companies"]').checked;
+    group.toggleAttribute('data-all', all);
+    group.querySelector('.summary-count').textContent = all ? 'All companies, including future ones' : boxes.filter(b => b.checked).length + ' of ' + boxes.length + ' selected';
   });
 }
+// "All companies" needs the country itself, so ticking it ticks the country too.
+document.querySelectorAll('input[name="all_companies"]').forEach(box => box.addEventListener('change', () => {
+  const country = document.querySelector('input[name="countries"][value="' + box.dataset.country + '"]');
+  if (box.checked && country) country.checked = true;
+}));
 roleSelect.addEventListener('change', refresh);
 form.addEventListener('change', refresh);
 refresh();

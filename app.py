@@ -6,7 +6,7 @@ from markupsafe import Markup, escape
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_wtf.csrf import CSRFProtect
-from utils.importer import import_workbook, column_map, detect_country, backfill_source_data, utcnow
+from utils.importer import import_workbook, column_map, detect_country, backfill_source_data, agent_id_from_source, utcnow
 from utils.fields import build_company_detail
 from utils import dashboard
 
@@ -75,10 +75,15 @@ def init_db():
             ("companies","city","TEXT"),("companies","state","TEXT"),
             ("contacts","contact_type","TEXT"),("contacts","landline_no","TEXT"),
             ("companies","source_data","TEXT"),("contacts","source_data","TEXT"),
-            ("users","first_name","TEXT"),("users","last_name","TEXT")
+            ("users","first_name","TEXT"),("users","last_name","TEXT"),("companies","agent_id","TEXT")
         ]:
             existing={r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
             if column not in existing: c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_companies_agent_id ON companies(agent_id COLLATE NOCASE)")
+        # Companies imported before agent_id existed take it from their stored XLSX row.
+        filled=[(aid,r["id"]) for r in c.execute("SELECT id,source_data FROM companies WHERE agent_id IS NULL AND source_data IS NOT NULL")
+                if (aid:=agent_id_from_source(r["source_data"]))]
+        if filled: c.executemany("UPDATE companies SET agent_id=? WHERE id=?",filled); logging.info("Backfilled agent_id rows=%s",len(filled))
         # Earlier imports ran without foreign keys and left rows pointing at deleted companies/users.
         # They are never displayed; removing them is a no-op once the database is clean.
         removed=sum(c.execute(sql).rowcount for sql in (
@@ -220,7 +225,8 @@ def search():
     page=arg_int("page") or arg_int("offset")//PAGE_SIZE+1
     user=current_user(); clause,params=access_sql(user); fields=visible_fields(user)
     # Only match on columns this user may see, so search cannot reveal hidden values.
-    cols=[FIELD_COLUMNS[f] for f in SEARCH_FIELDS if f in fields]
+    # Agent ID is shown to everyone who can open the company, so it is always searchable.
+    cols=["co.agent_id"]+[FIELD_COLUMNS[f] for f in SEARCH_FIELDS if f in fields]
     rows=[]; previews={}; total=0; pages=1
     if q:
         where=clause
@@ -229,13 +235,15 @@ def search():
             where+=" AND ("+" OR ".join(col+" LIKE ? COLLATE NOCASE" for col in cols)+")"
             params+=["%"+term+"%"]*len(cols)
         # One result per company; a term must match the company or one of its contacts.
-        sql=f"""SELECT co.id,co.company_name,co.network,co.city,co.state,cn.name country,COUNT(ct.id) matched,MIN(ct.id) preview_id,
+        sql=f"""SELECT co.id,co.agent_id,co.company_name,co.network,co.city,co.state,cn.name country,COUNT(ct.id) matched,MIN(ct.id) preview_id,
             (SELECT COUNT(*) FROM contacts c2 WHERE c2.company_id=co.id) contacts
             FROM companies co JOIN countries cn ON cn.id=co.country_id LEFT JOIN contacts ct ON ct.company_id=co.id WHERE {where} GROUP BY co.id"""
         with db() as c:
             total=c.execute("SELECT COUNT(*) FROM ("+sql+")",params).fetchone()[0]
             pages=max(1,-(-total//PAGE_SIZE)); page=min(page,pages)
-            rows=c.execute(sql+" ORDER BY cn.name,co.company_name COLLATE NOCASE LIMIT ? OFFSET ?",params+[PAGE_SIZE,(page-1)*PAGE_SIZE]).fetchall()
+            # An exact Agent ID match (e.g. SGP001) comes before partial ones (SGP0010, SGP0011...).
+            exact=f"co.agent_id COLLATE NOCASE IN ({','.join('?'*len(terms))})"
+            rows=c.execute(sql+f" ORDER BY {exact} DESC,cn.name,co.company_name COLLATE NOCASE LIMIT ? OFFSET ?",params+terms+[PAGE_SIZE,(page-1)*PAGE_SIZE]).fetchall()
             ids=[r["preview_id"] for r in rows if r["preview_id"]]
             if ids: previews={r["id"]:r for r in c.execute(f"SELECT id,name,job_position,email,phone FROM contacts WHERE id IN ({','.join('?'*len(ids))})",ids)}
     start=(page-1)*PAGE_SIZE+1 if total else 0

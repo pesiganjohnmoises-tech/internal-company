@@ -15,7 +15,7 @@
 <section class="hero">
   <h1>Your network, <em>within reach.</em></h1>
   {{ search_form() }}
-  <p class="hint">Search by company, contact name, email, phone, city or country. Use several words to narrow results.</p>
+  <p class="hint">Search by agent ID, company, contact name, email, phone, city or country. Use several words to narrow results.</p>
 </section>
 {% else %}
 {{ search_form(True) }}
@@ -39,6 +39,7 @@
         <h3>{{r.company_name|hl(q) if 'company_name' in fields else 'Company record'}}</h3>
         {% if place %}<div class="meta-line">{% for x in place %}{{x|hl(q)}}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
       </div>
+      {% if r.agent_id %}<span class="badge neutral">{{r.agent_id|hl(q)}}</span>{% endif %}
       {% if 'country' in fields %}<span class="country-chip">{{r.country|hl(q)}}</span>{% endif %}
     </div>
     {% if 'network' in fields and r.network %}<div class="result-tags"><span class="badge neutral">{{r.network|hl(q)}}</span></div>{% endif %}

@@ -45,6 +45,23 @@ check("startup removed orphaned contacts",q("SELECT COUNT(*) FROM contacts WHERE
 check("startup removed orphaned company grants",q("SELECT COUNT(*) FROM user_company_access WHERE company_id NOT IN (SELECT id FROM companies)")==0)
 check("secret key persisted for restarts",(TMP/".secret_key").exists() and A.load_secret_key()==A.app.secret_key)
 
+# --- Agent ID search ---------------------------------------------------------------------------------
+import re
+from utils.importer import agent_id_value
+def found(c,term):
+    html=c.get("/search",query_string={"q":term}).data.decode()
+    return [re.sub("<[^>]+>","",h) for h in re.findall(r"<h3>(.*?)</h3>",html) if "No companies" not in h]
+check("startup backfilled agent_id from stored rows",q("SELECT agent_id FROM companies WHERE company_name='Merlion Bridge Logistics Pte. Ltd.'")=="SGP001")
+check("agent ID search finds the company",found(adm,"SGP001")==["Merlion Bridge Logistics Pte. Ltd."])
+check("agent ID search ignores case and spaces",found(adm,"  sgp001 ")==["Merlion Bridge Logistics Pte. Ltd."])
+check("partial agent ID lists every match",len(found(adm,"SGP00"))==q("SELECT COUNT(*) FROM companies WHERE agent_id LIKE 'SGP00%'"))
+sg_cid=q("SELECT country_id FROM companies WHERE agent_id='SGP001'")
+con.execute("INSERT INTO companies(country_id,company_name,agent_id) VALUES(?,?,?)",(sg_cid,"AAA Agent Prefix Test","SGP0010")); con.commit()
+check("exact agent ID ranks before longer IDs",found(adm,"SGP001")[:2]==["Merlion Bridge Logistics Pte. Ltd.","AAA Agent Prefix Test"])
+con.execute("DELETE FROM companies WHERE agent_id='SGP0010'"); con.commit()
+check("Excel float IDs read as whole numbers",agent_id_value(1001.0)=="1001" and agent_id_value(" SGP001 ")=="SGP001")
+check("user without extra field grants can search agent ID",found(client("kharla","ChangeMe-Kharla-2026!"),"SGP001")==["Merlion Bridge Logistics Pte. Ltd."])
+
 # --- Sales column permissions (v4) -------------------------------------------------------------------
 adm.post("/admin/users/create",data={"username":"fulltest","password":PW,"role":"FULL_ACCESS"})
 ids["fulltest"]=q("SELECT id FROM users WHERE username='fulltest'")

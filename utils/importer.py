@@ -16,6 +16,8 @@ ALIASES={
 "address":["address","street","street address","company address","office address","streetaddress"]
 }
 REQUIRED={"company_name"}
+# Agent ID gets its own searchable column but stays out of ALIASES: the detail page shows it from source_data.
+AGENT_ID_HEADERS=("agentidfinal","agentid","agentcode")  # norm() of accepted headers
 def utcnow(): return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")+"Z"
 def norm(s):
     s=unicodedata.normalize("NFKD",str(s or "")).encode("ascii","ignore").decode().lower()
@@ -26,6 +28,20 @@ def detect_country(filename):
     # those suffixes are not part of the country name.
     stem=re.sub(r"(\s*(\(\d+\)|\d+|copy))+$","",stem,flags=re.I).strip() or stem
     return " ".join(w.capitalize() for w in stem.split()) or "Unknown"
+def agent_id_value(v):
+    """Agent ID as text; Excel stores numeric IDs as floats (1001.0), which must read as "1001"."""
+    if isinstance(v,float) and v.is_integer(): v=int(v)
+    return clean(v)
+def agent_id_index(headers):
+    keys=[norm(h) for h in headers]
+    return next((keys.index(k) for k in AGENT_ID_HEADERS if k in keys),None)
+def agent_id_from_source(raw):
+    """Agent ID from a stored source_data row (for rows imported before the agent_id column existed)."""
+    try: rec=json.loads(raw) if raw else {}
+    except ValueError: return None
+    if not isinstance(rec,dict): return None
+    by_key={norm(k):v for k,v in rec.items()}
+    return next((agent_id_value(by_key[k]) for k in AGENT_ID_HEADERS if k in by_key),None)
 def column_map(headers):
     normalized={norm(h):i for i,h in enumerate(headers) if h is not None}
     result={}
@@ -86,7 +102,7 @@ def import_workbook(path,db_path,country,replace_country=False):
         ws=wb.active; rows=ws.iter_rows(values_only=True)
         try: headers=next(rows)
         except StopIteration: raise ValueError("Workbook is empty")
-        mapping=column_map(headers); labels=header_labels(headers)
+        mapping=column_map(headers); labels=header_labels(headers); agent_col=agent_id_index(headers)
         missing=REQUIRED-set(mapping)
         if missing: raise ValueError("Missing required column(s): "+", ".join(sorted(missing)))
         data=[]; errors=[]
@@ -95,6 +111,7 @@ def import_workbook(path,db_path,country,replace_country=False):
             vals={f:(clean(row[i]) if i is not None and i<len(row) else None) for f,i in mapping.items()}
             if not vals.get("company_name"):
                 errors.append(f"Row {rownum}: missing company name"); continue
+            vals["agent_id"]=agent_id_value(row[agent_col]) if agent_col is not None and agent_col<len(row) else None
             vals["source_data"]=source_record(labels,row)
             data.append((rownum,vals))
     finally: wb.close()
@@ -125,16 +142,16 @@ def import_workbook(path,db_path,country,replace_country=False):
             if kept and key(company) in kept:
                 # First row of a company that already existed: same values a fresh insert would get.
                 company_id=kept.pop(key(company))
-                con.execute("""UPDATE companies SET company_name=?,network=?,contact_type=?,address=?,city=?,state=?,source_file=?,source_row=?,source_data=?,updated_at=? WHERE id=?""",
-                    (company,v.get("network"),v.get("contact_type"),v.get("address"),v.get("city"),v.get("state"),Path(path).name,rownum,v["source_data"],now,company_id))
+                con.execute("""UPDATE companies SET company_name=?,agent_id=?,network=?,contact_type=?,address=?,city=?,state=?,source_file=?,source_row=?,source_data=?,updated_at=? WHERE id=?""",
+                    (company,v.get("agent_id"),v.get("network"),v.get("contact_type"),v.get("address"),v.get("city"),v.get("state"),Path(path).name,rownum,v["source_data"],now,company_id))
                 con.execute("""INSERT INTO contacts(company_id,name,job_position,email,phone,address,contact_type,landline_no,source_file,source_row,source_data,created_at,updated_at)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(company_id,v.get("name"),v.get("job_position"),v.get("email"),v.get("phone"),v.get("address"),v.get("contact_type"),v.get("landline_no"),Path(path).name,rownum,v["source_data"],now,now))
                 inserted+=1; continue
             existing=con.execute("SELECT id FROM companies WHERE country_id=? AND lower(trim(company_name))=lower(trim(?))",(cid,company)).fetchone()
             if existing: company_id=existing["id"]
             else:
-                con.execute("""INSERT INTO companies(country_id,company_name,network,contact_type,address,city,state,source_file,source_row,source_data,created_at,updated_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",(cid,company,v.get("network"),v.get("contact_type"),v.get("address"),v.get("city"),v.get("state"),Path(path).name,rownum,v["source_data"],now,now))
+                con.execute("""INSERT INTO companies(country_id,company_name,agent_id,network,contact_type,address,city,state,source_file,source_row,source_data,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(cid,company,v.get("agent_id"),v.get("network"),v.get("contact_type"),v.get("address"),v.get("city"),v.get("state"),Path(path).name,rownum,v["source_data"],now,now))
                 company_id=con.execute("SELECT last_insert_rowid()").fetchone()[0]
             # One contact row per source row; no deduplication.
             con.execute("""INSERT INTO contacts(company_id,name,job_position,email,phone,address,contact_type,landline_no,source_file,source_row,source_data,created_at,updated_at)

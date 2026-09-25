@@ -1,4 +1,4 @@
-import os, re, io, csv, sqlite3, logging, secrets, time, hashlib, unicodedata
+import os, re, io, csv, sqlite3, logging, secrets, time, hashlib, hmac, subprocess, unicodedata
 from functools import wraps
 from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, Response
@@ -448,5 +448,27 @@ def admin_records():
     with db() as c:
         rows=c.execute("SELECT co.company_name,cn.name country,co.network,co.contact_type,co.source_file,co.source_row FROM companies co JOIN countries cn ON cn.id=co.country_id WHERE co.company_name LIKE ? COLLATE NOCASE ORDER BY cn.name,co.company_name LIMIT 200",("%"+q+"%",)).fetchall()
     return render_template("admin/records.html",rows=rows,q=q)
+# Auto-deploy: GitHub calls /deploy on each push; the route pulls the new code and touches the WSGI
+# file so PythonAnywhere reloads. Disabled (404) unless DEPLOY_SECRET is set.
+DEPLOY_SECRET=os.environ.get("DEPLOY_SECRET","")
+DEPLOY_BRANCH=os.environ.get("DEPLOY_BRANCH","main")
+DEPLOY_WSGI_PATH=os.environ.get("DEPLOY_WSGI_PATH","")
+@app.route("/deploy",methods=["POST"])
+@csrf.exempt
+def deploy():
+    if not DEPLOY_SECRET: abort(404)
+    sig="sha256="+hmac.new(DEPLOY_SECRET.encode(),request.get_data(),hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig,request.headers.get("X-Hub-Signature-256","")):
+        logging.warning("deploy: bad signature from %s",client_ip()); abort(403)
+    if request.headers.get("X-GitHub-Event")=="ping": return "pong"
+    if (request.get_json(silent=True) or {}).get("ref")!=f"refs/heads/{DEPLOY_BRANCH}": return "ignored: not the deploy branch"
+    try: r=subprocess.run(["git","pull","--ff-only"],cwd=ROOT,capture_output=True,text=True,timeout=120)
+    except (OSError,subprocess.TimeoutExpired) as e:
+        logging.error("deploy: git pull failed: %s",e); return "git pull failed",500
+    if r.returncode:
+        logging.error("deploy: git pull failed: %s",(r.stderr or r.stdout).strip()); return "git pull failed",500
+    logging.info("deploy: %s",r.stdout.strip())
+    if DEPLOY_WSGI_PATH: Path(DEPLOY_WSGI_PATH).touch()
+    return "deployed"
 with app.app_context(): init_db()
 if __name__=="__main__": app.run(debug=os.environ.get("FLASK_DEBUG")=="1")

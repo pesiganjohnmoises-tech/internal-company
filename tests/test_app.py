@@ -346,6 +346,19 @@ adm.post("/admin/users/create",data={"username":"namedtest","password":PW,"role"
 check("create user stores names",con.execute("SELECT first_name,last_name FROM users WHERE username='namedtest'").fetchone()[:]==("Maria","Santos"))
 check("audit log notes name change","name updated" in (TMP/"app.log").read_text(encoding="utf-8",errors="ignore"))
 
+import hmac, hashlib, json as _json
+def hook(body,secret="hook-secret",event="push"):
+    raw=_json.dumps(body).encode()
+    sig="sha256="+hmac.new(secret.encode(),raw,hashlib.sha256).hexdigest()
+    return A.app.test_client().post("/deploy",data=raw,content_type="application/json",headers={"X-Hub-Signature-256":sig,"X-GitHub-Event":event})
+check("deploy hook hidden without secret",hook({"ref":"refs/heads/main"}).status_code==404)
+A.DEPLOY_SECRET="hook-secret"
+check("deploy hook rejects bad signature",hook({"ref":"refs/heads/main"},secret="wrong").status_code==403)
+check("deploy hook answers ping",hook({},event="ping").data==b"pong")
+check("deploy hook ignores other branches",b"ignored" in hook({"ref":"refs/heads/dev"}).data)
+check("deploy hook reports failed pull",hook({"ref":"refs/heads/main"}).status_code==500)  # temp copy is not a git repo
+A.DEPLOY_SECRET=""
+
 con.close()
 passed=sum(ok for _,ok in results)
 print(f"\n{passed}/{len(results)} passed  (temp copy: {TMP})")

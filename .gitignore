@@ -1,0 +1,12 @@
+# Live data and secrets: these stay on each machine and are never pulled over
+*.db
+*.db.bak-*
+.secret_key
+*.log
+imports/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/

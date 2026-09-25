@@ -3,3 +3,7 @@ Created on 2026-09-24.
 
 
 Deploy test 2026-09-25
+sample test from kargosmart laptop
+
+git config --global user.name "John Moises Pesigan"
+git config --global user.email "pesigan.johnmoises@gmail.com"

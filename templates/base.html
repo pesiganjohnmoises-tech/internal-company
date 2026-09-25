@@ -1,0 +1,53 @@
+{% from "_icons.html" import logo, icon %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{% block title %}Internal Company Directory{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='11' fill='%23087f78'/%3E%3Ccircle cx='20' cy='12.5' r='4' fill='%23fff'/%3E%3Ccircle cx='11.5' cy='18' r='3.2' fill='%23cdeee9'/%3E%3Ccircle cx='28.5' cy='18' r='3.2' fill='%23cdeee9'/%3E%3Cpath d='M13.5 31a6.5 6.5 0 0 1 13 0' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{url_for('static',filename='css/style.css')}}">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <header class="topbar">
+    <a class="brand" href="{{url_for('home')}}" aria-label="Company Directory home">
+      {{ logo() }}
+      <span class="brand-text"><span class="brand-name">Company Directory</span><span class="brand-tag">Internal</span></span>
+    </a>
+    {% if user %}
+    {% set in_admin=request.path.startswith('/admin') %}
+    <nav class="top-nav" aria-label="Main navigation">
+      {% if user.role=='ADMIN' %}<a class="nav-link{% if in_admin %} active{% endif %}" href="{{url_for('admin_dashboard')}}"{% if in_admin %} aria-current="page"{% endif %}>{{icon('shield')}}<span>Admin</span></a>{% endif %}
+      <a class="nav-link{% if not in_admin %} active{% endif %}" href="{{url_for('search')}}"{% if not in_admin %} aria-current="page"{% endif %}>{{icon('search')}}<span>Directory</span></a>
+    </nav>
+    {% set role_label={'USER':'User','FULL_ACCESS':'Full Access','ADMIN':'Admin'}.get(user.role,user.role) %}
+    <details class="account">
+      <summary aria-label="Account menu: {{user.display_name}}">
+        <span class="account-greeting">Welcome, <strong>{{user.display_name}}</strong></span>
+        <span class="account-avatar" aria-hidden="true">{{(user.display_name.split()[:2]|map('first')|join)|upper}}</span>
+        {{icon('chevron',16)}}
+      </summary>
+      <div class="account-menu">
+        <div class="account-card">
+          <strong>{{user.display_name}}</strong>
+          <span>@{{user.username}} · {{role_label}}</span>
+        </div>
+        <form method="post" action="{{url_for('logout')}}">
+          <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+          <button class="account-signout" type="submit">{{icon('logout',16)}}Sign out</button>
+        </form>
+      </div>
+    </details>
+    {% endif %}
+  </header>
+  <main class="wrap" id="main-content">
+    {% with messages=get_flashed_messages(with_categories=true) %}
+      {% for category,message in messages %}<div class="notice {{category}}" role="status">{{message}}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+  <script src="{{url_for('static',filename='js/app.js')}}" defer></script>
+</body>
+</html>

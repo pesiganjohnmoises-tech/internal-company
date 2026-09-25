@@ -1,0 +1,17 @@
+{% macro value(v) -%}
+{%- if v.empty -%}<span class="value-empty"><span aria-hidden="true">—</span><span class="sr-only">Not provided</span></span>
+{%- elif v.links -%}{% for text,href in v.links %}{% if href %}<a href="{{href}}"{% if v.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{text}}</a>{% else %}<span>{{text}}</span>{% endif %}{% endfor %}
+{%- elif v.tone -%}<span class="badge {{v.tone}}">{{v.text}}</span>
+{%- elif v.same -%}<span class="value-same">{{v.text}}</span>
+{%- else -%}<span{% if v.raw %} title="Source value: {{v.raw}}"{% endif %}>{{v.text}}</span>{% if v.note %} <span class="badge bad">{{v.note}}</span>{% endif %}
+{%- endif -%}
+{%- endmacro %}
+
+{% macro field_list(fields, cls="") -%}
+<dl class="field-list {{cls}}">{% for f in fields %}
+  <div class="field{% if f.kind=='address' or (cls and f.kind=='email') %} field-wide{% endif %}{% if f.value.empty %} is-empty{% endif %}">
+    <dt>{{f.label}}{% if f.source %} <span class="field-source" title="XLSX column: {{f.source}}">{{f.source}}</span>{% endif %}</dt>
+    <dd class="kind-{{f.kind}}">{{value(f.value)}}</dd>
+  </div>{% endfor %}
+</dl>
+{%- endmacro %}

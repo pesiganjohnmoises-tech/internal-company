@@ -1,0 +1,140 @@
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}{% from "_icons.html" import icon %}
+{% block title %}User settings · Internal Company Directory{% endblock %}
+{% block content %}
+{% set role_names={'USER':'User','FULL_ACCESS':'Full Access','ADMIN':'Admin'} %}
+{% set role=target.role if target else 'USER' %}
+{% set full_name=[target.first_name,target.last_name]|map('default','',true)|map('trim')|select|join(' ') if target else '' %}
+<a class="back" href="{{url_for('users')}}">← Back to users</a>
+
+<div class="admin-head user-head">
+  <div class="user-identity">
+    <span class="user-avatar" aria-hidden="true">{{(((full_name or target.username).split()[:2]|map('first')|join) if target else '+')|upper}}</span>
+    <div>
+      <div class="eyebrow">ADMINISTRATION / USERS / {{'EDIT' if target else 'CREATE'}}</div>
+      <h1>{{(full_name or target.username) if target else 'Create user'}}</h1>
+      {% if full_name %}<p class="user-handle">@{{target.username}}</p>{% endif %}
+      {% if target %}
+      <div class="user-badges">
+        <span class="badge role-badge role-{{target.role|lower}}">{{role_names.get(target.role,target.role)}}</span>
+        <span class="badge {{'good' if target.status=='ACTIVE' else 'bad'}}">{{'Active' if target.status=='ACTIVE' else 'Disabled'}}</span>
+        {% if target.role=='USER' %}<span class="badge neutral">{{selected_countries|length}} countries · {{selected_companies|length}} companies · {{selected_sales|length}} of {{sales_fields|length}} sales columns</span>{% endif %}
+      </div>
+      {% else %}
+      <p class="muted">Create the account first; access settings can be adjusted after it is saved.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{{ admin_nav('users') }}
+
+<form method="post" class="user-form" data-role="{{role}}">
+  <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+
+  <section class="admin-panel settings-card" aria-labelledby="card-details">
+    <header class="card-head">
+      <div>
+        <h2 id="card-details">User details</h2>
+        <p class="muted">Name, account identity, user type and sign-in status.</p>
+      </div>
+    </header>
+    <div class="form-grid">
+      <label>First name <span class="optional">optional</span><input name="first_name" value="{{target.first_name or '' if target else ''}}" maxlength="60" placeholder="e.g. Juan" autocomplete="off"></label>
+      <label>Last name <span class="optional">optional</span><input name="last_name" value="{{target.last_name or '' if target else ''}}" maxlength="60" placeholder="e.g. Dela Cruz" autocomplete="off"></label>
+      <p class="field-help form-grid-note">Shown as the user's display name, e.g. “Welcome, Juan Dela Cruz”. The username is used when both are empty.</p>
+      <label>Username<input name="username" value="{{target.username if target else ''}}" {% if target %}disabled{% else %}required{% endif %} autocomplete="off"></label>
+      <label>User type<select name="role" id="role-select"><option value="USER" {% if role=='USER' %}selected{% endif %}>User</option><option value="ADMIN" {% if role=='ADMIN' %}selected{% endif %}>Admin</option><option value="FULL_ACCESS" {% if role=='FULL_ACCESS' %}selected{% endif %}>Full Access</option></select></label>
+      {% if target %}<label>Status<select name="status"><option value="ACTIVE" {% if target.status=='ACTIVE' %}selected{% endif %}>Active</option><option value="DISABLED" {% if target.status=='DISABLED' %}selected{% endif %}>Disabled</option></select></label>{% endif %}
+      <label>{% if target %}Reset password <span class="optional">optional</span>{% else %}Initial password{% endif %}<input type="password" name="password" minlength="12" {% if not target %}required{% endif %} placeholder="At least 12 characters" autocomplete="new-password"></label>
+    </div>
+    <ul class="role-guide" aria-label="User types">
+      <li data-for="USER"><strong>User</strong> sees only the countries, companies and sales columns granted below.</li>
+      <li data-for="FULL_ACCESS"><strong>Full Access</strong> sees every record and every field, including all sales columns.</li>
+      <li data-for="ADMIN"><strong>Admin</strong> sees everything and can manage users, imports and data.</li>
+    </ul>
+  </section>
+
+  {% if target %}
+  <section class="admin-panel settings-card user-scoped" aria-labelledby="card-sales">
+    <header class="card-head">
+      <div>
+        <h2 id="card-sales">Sales column access</h2>
+        <p class="muted">Select which sales columns this User is allowed to view. Administrators and Full Access users automatically have access to all sales columns.</p>
+      </div>
+      <span class="count-pill" data-count-for="sales_fields">{{selected_sales|length}} of {{sales_fields|length}}</span>
+    </header>
+    <p class="role-note">This account's user type already sees all sales columns. These selections only take effect if the type is set to <strong>User</strong>.</p>
+    <div class="sales-grid">
+      {% for key,label in sales_fields.items() %}
+      <label class="sales-option">
+        <input type="checkbox" class="switch" name="sales_fields" value="{{key}}" {% if key in selected_sales %}checked{% endif %}>
+        <span class="sales-name">{{label}}<small class="state"><span class="on">Visible</span><span class="off">Hidden</span></small></span>
+      </label>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="admin-panel settings-card user-scoped" aria-labelledby="card-directory">
+    <header class="card-head">
+      <div>
+        <h2 id="card-directory">Directory access</h2>
+        <p class="muted">A User needs both country access and company access to view a record.</p>
+      </div>
+    </header>
+    <p class="role-note">This account's user type can view every record; country and company selections only apply to <strong>User</strong>.</p>
+
+    <div class="subhead"><h3>Countries</h3><span class="count-pill" data-count-for="countries">{{selected_countries|length}} of {{countries|length}}</span></div>
+    <label class="checkrow select-all"><input type="checkbox" data-select-all="countries"><span><strong>Select all countries</strong></span></label>
+    <div class="check-grid">{% for c in countries %}<label class="checkrow"><input type="checkbox" name="countries" value="{{c.id}}" {% if c.id in selected_countries %}checked{% endif %}><span>{{c.name}}</span></label>{% else %}<p class="muted">Import a workbook to add countries.</p>{% endfor %}</div>
+
+    <div class="subhead separated"><h3>Companies</h3><span class="count-pill" data-count-for="companies">{{selected_companies|length}} of {{(companies|default([]))|length}}</span></div>
+    <p class="field-help">Only companies in selected countries are saved.</p>
+    <label class="checkrow select-all"><input type="checkbox" data-select-all="companies"><span><strong>Select all companies</strong></span></label>
+    <div class="company-access">{% for country in countries %}{% set cos=(companies|default([]))|selectattr('country_id','equalto',country.id)|list %}<details><summary><span>{{country.name}}</span><span class="summary-count">{{cos|selectattr('id','in',selected_companies)|list|length}} of {{cos|length}} selected</span></summary><div class="check-grid">{% for co in cos %}<label class="checkrow"><input type="checkbox" name="companies" value="{{co.id}}" {% if co.id in selected_companies %}checked{% endif %}><span>{{co.company_name}}</span></label>{% endfor %}</div></details>{% endfor %}</div>
+  </section>
+
+  <div class="save-bar">
+    <span class="muted">Changes apply when you save.</span>
+    <button class="primary" type="submit">{{'Save changes' if target else 'Create user'}}</button>
+  </div>
+</form>
+
+{% if target %}
+<section class="admin-panel danger-zone" aria-labelledby="card-danger">
+  <div>
+    <h2 id="card-danger">Delete user</h2>
+    <p class="muted">Permanently removes this account and all of its access settings.</p>
+  </div>
+  <form method="post" action="{{url_for('user_delete',uid=target.id)}}" onsubmit="return confirm('Delete this user?')" class="delete-form"><input type="hidden" name="csrf_token" value="{{csrf_token()}}"><button class="danger">Delete user</button></form>
+</section>
+{% endif %}
+
+<script>
+document.querySelectorAll('[data-select-all]').forEach(master => {
+  master.addEventListener('change', () => {
+    const name = master.dataset.selectAll;
+    document.querySelectorAll('input[name="' + name + '"]').forEach(box => { box.checked = master.checked; });
+    refresh();
+  });
+});
+const form = document.querySelector('.user-form');
+const roleSelect = document.getElementById('role-select');
+function refresh() {
+  form.dataset.role = roleSelect.value;
+  document.querySelectorAll('[data-count-for]').forEach(pill => {
+    const boxes = [...document.querySelectorAll('input[name="' + pill.dataset.countFor + '"]')];
+    pill.textContent = boxes.filter(b => b.checked).length + ' of ' + boxes.length;
+    const master = document.querySelector('[data-select-all="' + pill.dataset.countFor + '"]');
+    if (master) master.checked = boxes.length > 0 && boxes.every(b => b.checked);
+  });
+  document.querySelectorAll('.company-access details').forEach(group => {
+    const boxes = [...group.querySelectorAll('input[name="companies"]')];
+    group.querySelector('.summary-count').textContent = boxes.filter(b => b.checked).length + ' of ' + boxes.length + ' selected';
+  });
+}
+roleSelect.addEventListener('change', refresh);
+form.addEventListener('change', refresh);
+refresh();
+</script>
+{% endblock %}

@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% from "_icons.html" import icon %}{% block content %}<div class="empty error-state"><div class="empty-icon">{{icon('alert',26)}}</div><h2>Something went wrong</h2><p>{{message}}</p><a class="primary" href="{{url_for('home')}}">Return home</a></div>{% endblock %}

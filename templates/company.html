@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "_fields.html" import value, field_list %}
+{% block title %}{{company.company_name if 'company_name' in fields or user.role in ('ADMIN','FULL_ACCESS') else 'Record'}} · Directory{% endblock %}
+{% block content %}
+{% set h=detail.header %}
+{% set can_name=user.role in ('ADMIN','FULL_ACCESS') or 'company_name' in fields %}
+<a class="back" href="{{back_url}}">← Back to directory</a>
+
+<header class="company-header">
+  <div class="company-identity">
+    <span class="company-mark" aria-hidden="true">{{(company.company_name[:1] if can_name else '#')|upper}}</span>
+    <div class="company-title">
+      <p class="eyebrow">Company{% if user.role in ('ADMIN','FULL_ACCESS') or 'country' in fields %}<span class="dot"></span>{{company.country}}{% endif %}</p>
+      <h1>{{company.company_name if can_name else 'Company record'}}</h1>
+      {% if h.x_alias %}<p class="company-alias">Also known as {{h.x_alias.value.text}}</p>{% endif %}
+      {% if h.x_agentstatus or h.network %}<div class="company-tags">
+        {% if h.x_agentstatus %}<span class="badge {{h.x_agentstatus.value.tone}}">{{h.x_agentstatus.value.text}}</span>{% endif %}
+        {% if h.network %}<span class="badge neutral">{{h.network.value.text}}</span>{% endif %}
+      </div>{% endif %}
+    </div>
+  </div>
+  <dl class="company-facts">
+    <div><dt>Company ID</dt><dd>{{company.id}}</dd></div>
+    {% if h.x_agentidfinal %}<div><dt>{{h.x_agentidfinal.label}}</dt><dd>{{h.x_agentidfinal.value.text}}</dd></div>{% endif %}
+    <div><dt>Contacts</dt><dd>{{detail.contacts|length}}</dd></div>
+    {% if user.role=='ADMIN' and company.source_file %}<div><dt>Source</dt><dd title="{{company.source_file}}">{{company.source_file}} · row {{company.source_row}}</dd></div>{% endif %}
+  </dl>
+</header>
+
+<nav class="section-nav" aria-label="Record sections">
+  {% for s in detail.sections %}<a href="#sec-{{s.id}}">{{s.title}}</a>{% endfor %}
+  <a href="#sec-contacts">Contacts <span>{{detail.contacts|length}}</span></a>
+</nav>
+
+<div class="detail-sections">
+  {% for s in detail.sections %}
+  <section class="detail-card" id="sec-{{s.id}}" aria-labelledby="sec-{{s.id}}-title">
+    <details open>
+      <summary><h2 id="sec-{{s.id}}-title">{{s.title}}</h2><span class="section-count">{{s.filled}} of {{s.fields|length}} provided</span></summary>
+      {{ field_list(s.fields) }}
+    </details>
+  </section>
+  {% endfor %}
+</div>
+
+<section class="contacts-section" id="sec-contacts" aria-labelledby="sec-contacts-title">
+  <div class="contacts-head">
+    <h2 id="sec-contacts-title">Contacts <span class="count">{{detail.contacts|length}}</span></h2>
+    {% if detail.contacts|length > 4 %}
+    <label class="contact-filter"><span class="sr-only">Filter contacts</span>
+      <input type="search" id="contact-filter" placeholder="Filter by name, role, email, phone…" autocomplete="off">
+    </label>
+    {% endif %}
+  </div>
+  {% if detail.contacts %}
+  <div class="contact-cards" id="contact-cards">
+    {% for c in detail.contacts %}
+    <article class="contact-card" data-search="{{c.search}}" aria-label="{{c.name}}">
+      <div class="contact-card-head">
+        <span class="avatar{% if not c.named %} muted-avatar{% endif %}" aria-hidden="true">{{c.initials}}</span>
+        <h3{% if not c.named %} class="unnamed"{% endif %}>{{c.name}}</h3>
+        {% if user.role=='ADMIN' and c.source_row %}<span class="row-ref" title="Source XLSX row">Row {{c.source_row}}</span>{% endif %}
+      </div>
+      {{ field_list(c.fields, "compact-list") }}
+      {% if c.differs %}
+      <details class="row-values">
+        <summary>Differs from company record <span>{{c.differs|length}}</span></summary>
+        {{ field_list(c.differs, "compact-list") }}
+      </details>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  <p class="empty-filter" id="contact-empty" hidden>No contacts match this filter.</p>
+  {% else %}
+  <div class="empty"><h3>No contacts</h3><p>This company has no contact rows in the source file.</p></div>
+  {% endif %}
+</section>
+{% if not detail.has_source %}<p class="tiny">Only the core fields are available for this record. Re-import its workbook to capture all XLSX columns.</p>{% endif %}
+{% endblock %}

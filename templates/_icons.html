@@ -1,0 +1,28 @@
+{# Inline SVG brand mark and interface icons (stroke icons, 24px grid, inherit currentColor). #}
+{% macro logo(size=34) -%}
+<svg class="brand-logo" width="{{size}}" height="{{size}}" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+  <rect width="40" height="40" rx="11" fill="#087f78"/>
+  <path d="M13 17.5 20 14l7 3.5M13 17.5 20 26l7-8.5" fill="none" stroke="#7fd3c9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="20" cy="12.5" r="4" fill="#fff"/>
+  <circle cx="11.5" cy="18" r="3.2" fill="#cdeee9"/>
+  <circle cx="28.5" cy="18" r="3.2" fill="#cdeee9"/>
+  <path d="M13.5 31a6.5 6.5 0 0 1 13 0" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+</svg>
+{%- endmacro %}
+
+{% set PATHS={
+  'search':'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  'shield':'<path d="M12 3 5 6v5c0 4.5 3 8.3 7 9.5 4-1.2 7-5 7-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
+  'grid':'<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
+  'users':'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.2a6.5 6.5 0 0 1 3 5.8"/>',
+  'upload':'<path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
+  'database':'<ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v13c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-13"/><path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5"/>',
+  'list':'<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r=".8"/><circle cx="4.5" cy="12" r=".8"/><circle cx="4.5" cy="18" r=".8"/>',
+  'plus':'<path d="M12 5v14M5 12h14"/>',
+  'chevron':'<path d="m6 9 6 6 6-6"/>',
+  'logout':'<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5M5 12h11"/>',
+  'alert':'<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
+} %}
+{% macro icon(name,size=18) -%}
+<svg class="icon icon-{{name}}" width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">{{PATHS[name]|safe}}</svg>
+{%- endmacro %}

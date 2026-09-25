@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{'Search results' if q else 'Directory'}} · Internal Company Directory{% endblock %}
+{% block content %}
+{% macro search_form(compact=False) -%}
+<form class="searchbar{% if compact %} search-compact{% endif %}" method="get" action="{{url_for('search')}}" role="search">
+  <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  <label class="sr-only" for="directory-query">Search the directory</label>
+  <input id="directory-query" name="q" value="{{q}}" placeholder="Search companies, people, locations…" autocomplete="off"{% if not q %} autofocus{% endif %}>
+  {% if q %}<a class="clear-search" href="{{url_for('search')}}">Clear</a>{% endif %}
+  <button>Search</button>
+</form>
+{%- endmacro %}
+<div class="search-page">
+{% if not q %}
+<section class="hero">
+  <h1>Your network, <em>within reach.</em></h1>
+  {{ search_form() }}
+  <p class="hint">Search by company, contact name, email, phone, city or country. Use several words to narrow results.</p>
+</section>
+{% else %}
+{{ search_form(True) }}
+<header class="results-bar">
+  <div>
+    <h1 class="results-title">Results for “{{q}}”</h1>
+    <p class="results-summary">{% if total %}Showing <strong>{{start}}–{{end}}</strong> of <strong>{{total}}</strong> {{'company' if total==1 else 'companies'}}{% else %}No matching companies{% endif %}</p>
+  </div>
+  {% if pages>1 %}<span class="count">Page {{page}} of {{pages}}</span>{% endif %}
+</header>
+{% if terms_cut %}<p class="notice error" role="status">Only the first 8 words of your search were used.</p>{% endif %}
+
+{% if rows %}
+<div class="results">
+  {% for r in rows %}{% set p=previews.get(r.preview_id) %}
+  {% set place=[r.city if 'city' in fields else None, r.state if 'state' in fields else None]|select|list %}
+  <a class="result-card" href="{{url_for('company',company_id=r.id)}}">
+    <div class="result-top">
+      <span class="result-mark" aria-hidden="true">{{(r.company_name[:1] if 'company_name' in fields else '#')|upper}}</span>
+      <div class="result-heading">
+        <h3>{{r.company_name|hl(q) if 'company_name' in fields else 'Company record'}}</h3>
+        {% if place %}<div class="meta-line">{% for x in place %}{{x|hl(q)}}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+      </div>
+      {% if 'country' in fields %}<span class="country-chip">{{r.country|hl(q)}}</span>{% endif %}
+    </div>
+    {% if 'network' in fields and r.network %}<div class="result-tags"><span class="badge neutral">{{r.network|hl(q)}}</span></div>{% endif %}
+    {% if p and (('name' in fields and p.name) or ('email' in fields and p.email) or ('phone' in fields and p.phone)) %}
+    <div class="result-contact">
+      <span class="avatar" aria-hidden="true">{{((p.name if 'name' in fields else '') or '#')[:1]|upper}}</span>
+      <div class="result-contact-body">
+        {% if 'name' in fields and p.name %}<strong>{{p.name|hl(q)}}</strong>{% endif %}
+        {% if 'job_position' in fields and p.job_position %}<small>{{p.job_position|hl(q)}}</small>{% endif %}
+        {% if 'email' in fields and p.email %}<span class="detail-line">{{p.email|hl(q)}}</span>{% endif %}
+        {% if 'phone' in fields and p.phone %}<span class="detail-line">{{p.phone|hl(q)}}</span>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+    <div class="view">
+      <span class="contact-count">{% if r.contacts==0 %}No contacts{% elif r.matched and r.matched<r.contacts %}{{r.matched}} of {{r.contacts}} contacts match{% else %}{{r.contacts}} contact{{'s' if r.contacts!=1}}{% endif %}</span>
+      <span>View details →</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+{% if pages>1 %}
+<nav class="pager" aria-label="Search result pages">
+  {% if page>1 %}<a class="pager-step" href="{{url_for('search',q=q,page=page-1)}}" rel="prev">← Previous</a>{% else %}<span class="pager-step disabled" aria-disabled="true">← Previous</span>{% endif %}
+  <div class="pager-pages">
+    {% for n in page_links %}
+      {% if n is none %}<span class="pager-gap" aria-hidden="true">…</span>
+      {% elif n==page %}<span class="pager-num current" aria-current="page">{{n}}</span>
+      {% else %}<a class="pager-num" href="{{url_for('search',q=q,page=n)}}" aria-label="Page {{n}}">{{n}}</a>{% endif %}
+    {% endfor %}
+  </div>
+  {% if page<pages %}<a class="pager-step" href="{{url_for('search',q=q,page=page+1)}}" rel="next">Next →</a>{% else %}<span class="pager-step disabled" aria-disabled="true">Next →</span>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<div class="empty">
+  <div class="empty-icon" aria-hidden="true">⌕</div>
+  <h3>No companies match “{{q}}”</h3>
+  <p>Check the spelling, try fewer words, or search by a different detail such as a city or contact name.</p>
+</div>
+{% endif %}
+{% endif %}
+</div>
+{% endblock %}

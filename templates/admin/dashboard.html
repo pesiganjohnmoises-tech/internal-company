@@ -1,0 +1,219 @@
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}{% from "_icons.html" import icon %}
+{% block title %}Admin · Internal Company Directory{% endblock %}
+{% block content %}
+{% macro panel_error() -%}
+<div class="notice error" role="status">This panel could not be loaded. The rest of the overview is unaffected; details are in app.log.</div>
+{%- endmacro %}
+{% macro company_list(items) -%}
+<ul class="dash-list">{% for i in items %}
+  <li><a href="{{url_for('company',company_id=i.id)}}"><span class="dash-list-name">{{i.name}}</span><span class="dash-list-meta">{{i.country}} · {{i.detail}}</span></a></li>{% endfor %}
+</ul>
+{%- endmacro %}
+<div class="admin-head"><div><div class="eyebrow">ADMINISTRATION</div><h1>Directory overview</h1><p class="muted">Manage people, access and source data.</p></div><span class="admin-badge">ADMIN</span></div>
+{{ admin_nav('admin_dashboard') }}
+{% if default_pw %}<div class="notice error" role="alert"><strong>Change default passwords:</strong> {{default_pw|join(", ")}} still {{"uses" if default_pw|length==1 else "use"}} the initial password from the README. Reset {{"it" if default_pw|length==1 else "them"}} from Users → Edit access.</div>{% endif %}
+<div class="stats">{% for label,val in [('Users',stats.users),('Countries',stats.countries),('Companies',stats.companies),('Contacts',stats.contacts)] %}<div class="stat"><span>{{label}}</span><strong>{{val}}</strong></div>{% endfor %}</div>
+
+<nav class="quick-actions" aria-label="Quick actions">
+  <a class="quick-action" href="{{url_for('user_create')}}"><strong>＋ Create user</strong><span>New account and access</span></a>
+  <a class="quick-action" href="{{url_for('imports_page')}}"><strong>Upload workbook</strong><span>Replace a country's data</span></a>
+  <a class="quick-action" href="{{url_for('search')}}"><strong>Search directory</strong><span>Companies and contacts</span></a>
+  <a class="quick-action" href="{{url_for('admin_records')}}"><strong>Company records</strong><span>Source file and row</span></a>
+  <a class="quick-action" href="{{url_for('admin_export',kind='companies')}}" download><strong>Export companies</strong><span>CSV · all XLSX columns</span></a>
+  <a class="quick-action" href="{{url_for('admin_export',kind='contacts')}}" download><strong>Export contacts</strong><span>CSV · every contact</span></a>
+</nav>
+<nav class="section-nav" aria-label="Overview sections">
+  {% for id,label,key in [('attention','Needs attention','attention'),('quality','Data quality','quality'),('breakdown','Countries & networks','breakdown'),('sales','Sales coverage','sales'),('access','Access','access'),('import-health','Import health','imports'),('activity','Activity','activity')] %}
+  <a href="#{{id}}">{{label}}{% if key=='attention' and panels.attention.data and panels.attention.data.total %} <span>{{panels.attention.data.total}}</span>{% endif %}{% if panels[key].error %} <span>!</span>{% endif %}</a>
+  {% endfor %}
+</nav>
+
+{% set p=panels.attention %}
+<section class="admin-panel dash-panel" id="attention" aria-labelledby="attention-title">
+  <div class="section-head">
+    <div><h2 id="attention-title">Needs attention</h2><p class="muted dash-sub">Network memberships, KYC and agent status taken from the workbook columns.</p></div>
+    {% if p.data %}<span class="count-pill {{'warn' if p.data.total else ''}}">{{p.data.total}} item{{'s' if p.data.total!=1}}</span>{% endif %}
+  </div>
+  {% if p.error %}{{ panel_error() }}
+  {% elif not p.data.total %}<div class="dash-empty">Nothing needs attention: no expired or expiring networks, pending KYC or inactive agents.</div>
+  {% else %}
+  <div class="dash-grid">
+    {% for key,title,tone,help in [('expired','Network expired','bad','Membership end date has passed.'),('soon','Expiring within 90 days','warn','Renew before the end date.'),('kyc_pending','KYC pending','warn','KYC status is pending or under review.'),('inactive','Inactive agents','bad','Agent status is inactive, suspended or similar.'),('unreadable','Unreadable expiry date','neutral','The Network Expiry cell is not a date; correct it in the workbook.')] %}
+    {% if p.data[key] %}
+    <div class="dash-group">
+      <h3><span class="badge {{tone}}">{{p.data[key]|length}}</span> {{title}}</h3>
+      <p class="dash-help">{{help}}</p>
+      {{ company_list(p.data[key]) }}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{% set p=panels.quality %}
+<section class="admin-panel dash-panel" id="quality" aria-labelledby="quality-title">
+  <div class="section-head">
+    <div><h2 id="quality-title">Contact data quality</h2><p class="muted dash-sub">Missing contact details and email addresses used by more than one contact.</p></div>
+  </div>
+  {% if p.error %}{{ panel_error() }}
+  {% elif not p.data.contacts %}<div class="dash-empty">No contacts imported yet.</div>
+  {% else %}
+  <div class="dash-metrics">
+    <div><strong>{{p.data.contacts}}</strong><span>Contacts</span></div>
+    <div><strong>{{p.data.no_email}}</strong><span>Without email</span></div>
+    <div><strong>{{p.data.no_phone}}</strong><span>Without phone or landline</span></div>
+    <div><strong>{{p.data.duplicates|length}}</strong><span>Shared email addresses</span></div>
+  </div>
+  {% if p.data.no_email_companies or p.data.missing_email or p.data.duplicates %}
+  <div class="dash-grid">
+    {% for key,title,tone,help in [('no_email_companies','Companies with no email','bad','No contact at this company has an email address.'),('missing_email','Contacts missing email','warn','Some contacts at this company have no email address.'),('duplicates','Shared email addresses','neutral','The same address is listed on several contacts; check for duplicates.')] %}
+    {% if p.data[key] %}
+    <div class="dash-group">
+      <h3><span class="badge {{tone}}">{{p.data[key]|length}}</span> {{title}}</h3>
+      <p class="dash-help">{{help}}</p>
+      {{ company_list(p.data[key]) }}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}<div class="dash-empty">Every company has contact emails and no email address is shared.</div>{% endif %}
+  {% endif %}
+</section>
+
+{% set p=panels.breakdown %}
+<section class="admin-panel dash-panel" id="breakdown" aria-labelledby="breakdown-title">
+  <div class="section-head">
+    <div><h2 id="breakdown-title">Countries &amp; networks</h2><p class="muted dash-sub">Where the {{p.data.total if p.data else ''}} companies are, and which networks they belong to. Select a row to search for it.</p></div>
+    <a class="secondary small dash-link" href="{{url_for('database_status')}}">Database details →</a>
+  </div>
+  {% if p.error %}{{ panel_error() }}
+  {% elif not p.data.total %}<div class="dash-empty">No companies imported yet. Import a workbook from Excel imports.</div>
+  {% else %}
+  <div class="dash-grid">
+    <div class="dash-group">
+      <h3>By country</h3>
+      <ul class="bar-list">{% for c in p.data.countries %}
+        <li><a href="{{url_for('search',q=c.name)}}"><span class="bar-label">{{c.name}}</span><span class="bar-value">{{c.companies}} <small>companies · {{c.contacts}} contacts</small></span><span class="bar" aria-hidden="true"><span style="width:{{(100*c.companies/p.data.max_country)|round(1)}}%"></span></span></a></li>{% endfor %}
+      </ul>
+    </div>
+    <div class="dash-group">
+      <h3>By network</h3>
+      <ul class="bar-list">{% for n in p.data.networks %}
+        <li><a href="{{url_for('search',q=n.name)}}"><span class="bar-label">{{n.name}}</span><span class="bar-value">{{n.companies}} <small>companies</small></span><span class="bar" aria-hidden="true"><span style="width:{{(100*n.companies/p.data.max_network)|round(1)}}%"></span></span></a></li>{% endfor %}
+        {% if p.data.no_network %}<li><div class="bar-row muted-row"><span class="bar-label">No network</span><span class="bar-value">{{p.data.no_network}} <small>companies</small></span><span class="bar" aria-hidden="true"><span style="width:{{(100*p.data.no_network/p.data.max_network)|round(1)}}%"></span></span></div></li>{% endif %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+</section>
+
+{% set p=panels.sales %}
+<section class="admin-panel dash-panel" id="sales" aria-labelledby="sales-title">
+  <div class="section-head">
+    <div><h2 id="sales-title">Sales coverage</h2><p class="muted dash-sub">Companies with a named rep in each sales column, and the reps covering the most companies.</p></div>
+  </div>
+  {% if p.error %}{{ panel_error() }}
+  {% elif not p.data or not p.data[0].total %}<div class="dash-empty">No companies imported yet.</div>
+  {% else %}
+  <div class="sales-grid-dash">
+    {% for s in p.data %}
+    <div class="dash-group">
+      <h3>{{s.label}}</h3>
+      <p class="dash-help">{{s.assigned}} of {{s.total}} companies have a rep{% if s.missing %} · <strong class="warn-text">{{s.missing|length}} without</strong>{% endif %}</p>
+      <span class="bar coverage" aria-hidden="true"><span style="width:{{(100*s.assigned/s.total)|round(1)}}%"></span></span>
+      {% if s.reps %}<ul class="rep-list">{% for r in s.reps[:6] %}<li><span>{{r.name}}</span><strong>{{r.companies}}</strong></li>{% endfor %}</ul>
+      {% if s.reps|length>6 %}<p class="dash-help">+{{s.reps|length-6}} more rep{{'s' if s.reps|length-6!=1}}</p>{% endif %}
+      {% else %}<p class="dash-help">No reps named in this column.</p>{% endif %}
+      {% if s.missing %}<details class="dash-more"><summary>Companies without a rep ({{s.missing|length}})</summary>{{ company_list(s.missing) }}</details>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{% set p=panels.access %}
+<section class="admin-panel dash-panel" id="access" aria-labelledby="access-title">
+  <div class="section-head">
+    <div><h2 id="access-title">Access overview</h2><p class="muted dash-sub">What each account can see. Admin and Full Access see every record and sales column.</p></div>
+    <a class="secondary small dash-link" href="{{url_for('users')}}">Manage users →</a>
+  </div>
+  {% if p.error %}{{ panel_error() }}
+  {% elif not p.data.users %}<div class="dash-empty">No user accounts.</div>
+  {% else %}
+  {% set role_names={'USER':'User','FULL_ACCESS':'Full Access','ADMIN':'Admin'} %}
+  <div class="dash-chips">
+    {% for role in ['ADMIN','FULL_ACCESS','USER'] if p.data.by_role.get(role) %}<span class="badge role-badge role-{{role|lower}}">{{p.data.by_role[role]}} {{role_names[role]}}</span>{% endfor %}
+    <span class="badge good">{{p.data.active}} active</span>
+    {% if p.data.disabled %}<span class="badge bad">{{p.data.disabled}} disabled</span>{% endif %}
+  </div>
+  {% if p.data.no_access %}<div class="notice error" role="status"><strong>{{p.data.no_access|length}} active User{{'s' if p.data.no_access|length!=1}} can't see any records:</strong> {% for u in p.data.no_access %}<a href="{{url_for('user_edit',uid=u.id)}}">{{u.username}}</a>{{', ' if not loop.last}}{% endfor %}. Grant a country and its companies.</div>{% endif %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>User</th><th>Type</th><th>Status</th><th>Records visible</th><th>Sales columns</th><th></th></tr></thead>
+    <tbody>{% for u in p.data.users %}<tr>
+      <td><strong>{{u.username}}</strong></td>
+      <td><span class="badge role-badge role-{{u.role|lower}}">{{role_names.get(u.role,u.role)}}</span></td>
+      <td><span class="status {{'disabled' if u.status!='ACTIVE' else ''}}">{{u.status}}</span></td>
+      <td>{% if u.role=='USER' %}{{u.visible}} of {{u.total}} companies <small class="muted">· {{u.countries}} countr{{'y' if u.countries==1 else 'ies'}}</small>{% else %}All {{u.total}} companies{% endif %}</td>
+      <td>{% if u.role=='USER' %}{{u.sales|join(', ') if u.sales else '—'}}{% else %}All {{p.data.sales_total}}{% endif %}</td>
+      <td><a class="table-link" href="{{url_for('user_edit',uid=u.id)}}">Edit →</a></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+</section>
+
+{% set p=panels.imports %}
+<section class="admin-panel dash-panel" id="import-health" aria-labelledby="import-health-title">
+  <div class="section-head">
+    <div><h2 id="import-health-title">Import health</h2><p class="muted dash-sub">What is loaded for each country. Importing a workbook replaces that country's whole dataset.</p></div>
+  </div>
+  {% if p.error %}{{ panel_error() }}
+  {% else %}
+  {% for f in p.data.stale %}<div class="notice error" role="status"><strong>data/{{f.name}} is older than the live {{f.country}} data.</strong> {{f.country}} was last loaded from an uploaded workbook; importing data/{{f.name}} (modified {{f.modified}}) would replace it with older data.</div>{% endfor %}
+  {% if p.data.failed %}<div class="notice error" role="status">{{p.data.failed}} import{{'s' if p.data.failed!=1}} failed. See the history on <a href="{{url_for('imports_page')}}">Excel imports</a>.</div>{% endif %}
+  {% if not p.data.countries %}<div class="dash-empty">No countries loaded yet. Import a workbook from Excel imports.</div>
+  {% else %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Country</th><th>Loaded from</th><th>Loaded at</th><th>Companies</th><th>Last import</th></tr></thead>
+    <tbody>{% for c in p.data.countries %}<tr>
+      <td><strong>{{c.name}}</strong></td>
+      <td>{{c.source or '—'}}{% if c.uploaded %} <span class="badge neutral">uploaded</span>{% endif %}</td>
+      <td>{{c.loaded or '—'}}</td>
+      <td>{{c.companies}}</td>
+      <td>{% if c.last %}<span class="status {{'disabled' if c.last.status=='FAILED' else ''}}">{{c.last.status}}</span> {{c.last.records_imported}} rows{% else %}—{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+  {% set new=p.data.files|selectattr('state','equalto','new')|list %}
+  {% if new %}<p class="dash-help dash-note">Not imported yet: {% for f in new %}data/{{f.name}} ({{f.country}}){{', ' if not loop.last}}{% endfor %}.</p>{% endif %}
+  {% endif %}
+</section>
+
+<section class="admin-panel"><div class="section-head"><h2>Recent imports</h2><a class="primary small" href="{{url_for('imports_page')}}">Manage imports →</a></div>{% if imports %}<div class="table-wrap"><table><thead><tr><th>Source</th><th>Country</th><th>Status</th><th>Processed</th><th>Imported</th><th>When</th></tr></thead><tbody>{% for i in imports %}<tr><td>{{i.source_file}}</td><td>{{i.country}}</td><td><span class="status {{'disabled' if i.status=='FAILED' else ''}}">{{i.status}}</span></td><td>{{i.records_processed}}</td><td>{{i.records_imported}}</td><td>{{i.imported_at}}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">No imports recorded yet.</p>{% endif %}</section>
+{% set p=panels.activity %}
+<section class="admin-panel dash-panel" id="activity" aria-labelledby="activity-title">
+  <div class="section-head">
+    <div><h2 id="activity-title">Recent activity</h2><p class="muted dash-sub">Admin actions and sign-in failures from app.log (times are server local time).</p></div>
+  </div>
+  {% if p.error %}{{ panel_error() }}
+  {% elif p.data.missing %}<div class="dash-empty">app.log was not found, so no activity can be shown.</div>
+  {% else %}
+  <div class="dash-grid">
+    <div class="dash-group">
+      <h3>Admin actions</h3>
+      {% if p.data.actions %}<ul class="dash-list activity-list">{% for a in p.data.actions %}<li><span class="dash-list-name">{{a.text}}</span><span class="dash-list-meta">{{a.when}}</span></li>{% endfor %}</ul>
+      {% else %}<p class="dash-help">No admin actions recorded yet.</p>{% endif %}
+    </div>
+    <div class="dash-group">
+      <h3>Sign-ins, last 24 hours</h3>
+      <div class="dash-metrics two">
+        <div><strong>{{p.data.failed}}</strong><span>Failed sign-ins</span></div>
+        <div><strong>{{p.data.throttled}}</strong><span>Blocked (too many attempts)</span></div>
+      </div>
+      {% if p.data.targets %}<ul class="rep-list">{% for name,n in p.data.targets %}<li><span>{{name}}</span><strong>{{n}}</strong></li>{% endfor %}</ul>
+      {% else %}<p class="dash-help">No failed sign-ins.</p>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

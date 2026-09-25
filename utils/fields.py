@@ -127,5 +127,7 @@ def build_company_detail(company,contacts,can_view):
         name=ct["name"] if can_view("name") and not is_empty(ct["name"]) else None
         search=" ".join(str(ct[k]) for k in CONTACT_FIELDS if can_view(k) and not is_empty(ct[k])).lower()
         cards.append({"id":ct["id"],"name":name or f"Contact {n}","named":bool(name),"initials":initials(name) if name else "#",
-                      "fields":fields,"differs":differs,"source_row":ct["source_row"],"search":search})
-    return {"sections":sections,"header":header,"contacts":cards,"has_source":bool(source)}
+                      "fields":fields,"by_key":{f["key"]:f for f in fields},"differs":differs,"source_row":ct["source_row"],"search":search})
+    # Contact table columns: only those the user may see and at least one contact fills in.
+    contact_columns=[(k,LABELS.get(k,h)) for k,h in contact_cols if any(not c["by_key"][k]["value"].get("empty") and not c["by_key"][k]["value"].get("same") for c in cards)]
+    return {"sections":sections,"header":header,"contacts":cards,"contact_columns":contact_columns,"has_source":bool(source),"by_key":by_key}

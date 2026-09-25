@@ -1,11 +1,11 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_icons.html" import icon %}
 {% block title %}{{'Search results' if q or country else 'Directory'}} · Internal Company Directory{% endblock %}
 {% block content %}
 {% macro search_form(compact=False) -%}
 <form class="searchbar{% if compact %} search-compact{% endif %}" method="get" action="{{url_for('search')}}" role="search">
-  <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  {{icon('search',20)}}
   <label class="sr-only" for="directory-query">Search the directory</label>
-  <input id="directory-query" name="q" value="{{q}}" placeholder="Search companies, people, locations…" autocomplete="off"{% if not q and not country %} autofocus{% endif %}>
+  <input id="directory-query" name="q" value="{{q}}" placeholder="Agent name, agent ID, city, network or contact…" autocomplete="off"{% if not q and not country %} autofocus{% endif %}>
   {% if countries|length>1 %}
   <label class="sr-only" for="directory-country">Country</label>
   <select id="directory-country" name="country" class="search-select">
@@ -14,66 +14,86 @@
   </select>
   {% endif %}
   {% if q or country %}<a class="clear-search" href="{{url_for('search')}}">Clear</a>{% endif %}
-  <button>Search</button>
+  <button class="primary">Search</button>
 </form>
+{%- endmacro %}
+{% macro status_line(s) -%}
+{% if s.flags %}<span class="status-line">{% for i in s.flags %}<span class="status-item tone-{{i.tone}}">{{i.text}}</span>{% endfor %}</span>{% endif %}
 {%- endmacro %}
 <div class="search-page">
 {% if not q and not country %}
-<section class="hero">
-  <h1>Your network, <em>within reach.</em></h1>
-  {{ search_form() }}
-  <p class="hint">Search by agent ID, company, contact name, email, phone, city or country. Use several words to narrow results.</p>
-  {% if countries %}
-  <nav class="country-browse" aria-label="Browse by country">
-    <span>Browse:</span>
-    {% for c in countries %}<a class="country-chip" href="{{url_for('search',country=c)}}">{{c}}</a>{% endfor %}
-  </nav>
+<section class="home">
+  <div class="home-search">
+    <h1 class="page-title">Find an agent</h1>
+    <p class="muted">Search partner agents and their contacts{% if tiles %} across {{tiles|length}} countr{{'y' if tiles|length==1 else 'ies'}}{% endif %}.</p>
+    {{ search_form() }}
+  </div>
+  {% if attention %}
+  <a class="notice warn attention-link" href="{{url_for('admin_dashboard')}}#attention">{{icon('alert',18)}}<span><strong>{{attention}} agent{{'s' if attention!=1}} need attention</strong> — expired or expiring networks, pending KYC or inactive status.</span><span class="link-arrow">Review →</span></a>
   {% endif %}
+  <div class="home-grid">
+    <section class="panel" aria-labelledby="browse-title">
+      <h2 id="browse-title" class="panel-title">Browse by country</h2>
+      {% if tiles %}
+      <ul class="country-tiles">
+        {% for t in tiles %}<li><a href="{{url_for('search',country=t.name)}}"><span class="code">{{t.code}}</span><span class="tile-name">{{t.name}}</span><span class="tile-count">{{t.companies}} agent{{'s' if t.companies!=1}}</span></a></li>{% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">You don't have access to any countries yet. Ask an administrator to grant access.</p>
+      {% endif %}
+    </section>
+    <section class="panel" aria-labelledby="recent-title">
+      <h2 id="recent-title" class="panel-title">{{icon('history',16)}} Recently viewed</h2>
+      <ol class="recent-list" id="recent-list" hidden></ol>
+      <p class="muted" id="recent-empty">Agents you open appear here, so you can get back to them quickly.</p>
+    </section>
+  </div>
 </section>
 {% else %}
 {{ search_form(True) }}
 <header class="results-bar">
   <div>
-    <h1 class="results-title">{% if q %}Results for “{{q}}”{% if country %} in {{country}}{% endif %}{% else %}Companies in {{country}}{% endif %}</h1>
-    <p class="results-summary">{% if total %}Showing <strong>{{start}}–{{end}}</strong> of <strong>{{total}}</strong> {{'company' if total==1 else 'companies'}}{% else %}No matching companies{% endif %}</p>
+    <h1 class="results-title">{% if q %}Results for “{{q}}”{% if country %} in {{country}}{% endif %}{% else %}Agents in {{country}}{% endif %}</h1>
+    <p class="results-summary">{% if total %}Showing <strong>{{start}}–{{end}}</strong> of <strong>{{total}}</strong> {{'agent' if total==1 else 'agents'}}{% else %}No matching agents{% endif %}</p>
   </div>
-  {% if pages>1 %}<span class="count">Page {{page}} of {{pages}}</span>{% endif %}
+  {% if pages>1 %}<span class="muted">Page {{page}} of {{pages}}</span>{% endif %}
 </header>
 {% if terms_cut %}<p class="notice error" role="status">Only the first 8 words of your search were used.</p>{% endif %}
 
 {% if rows %}
-<div class="results">
+<ol class="result-list">
   {% for r in rows %}{% set p=previews.get(r.preview_id) %}
   {% set place=[r.city if 'city' in fields else None, r.state if 'state' in fields else None]|select|list %}
-  <a class="result-card" href="{{url_for('company',company_id=r.id)}}">
-    <div class="result-top">
-      <span class="result-mark" aria-hidden="true">{{(r.company_name[:1] if 'company_name' in fields else '#')|upper}}</span>
-      <div class="result-heading">
-        <h3>{{r.company_name|hl(q) if 'company_name' in fields else 'Company record'}}</h3>
-        {% if place %}<div class="meta-line">{% for x in place %}{{x|hl(q)}}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
-      </div>
-      {% if r.agent_id %}<span class="badge neutral">{{r.agent_id|hl(q)}}</span>{% endif %}
-      {% if 'country' in fields %}<span class="country-chip">{{r.country|hl(q)}}</span>{% endif %}
-    </div>
-    {% if 'network' in fields and r.network %}<div class="result-tags"><span class="badge neutral">{{r.network|hl(q)}}</span></div>{% endif %}
-    {% if p and (('name' in fields and p.name) or ('email' in fields and p.email) or ('phone' in fields and p.phone)) %}
+  <li class="result-row">
+    <a class="result-main" href="{{url_for('company',company_id=r.id)}}">
+      <span class="result-name">{{r.company_name|hl(q) if 'company_name' in fields else 'Company record'}}</span>
+      <span class="result-meta">
+        {% if r.agent_id %}<span class="ref">{{r.agent_id|hl(q)}}</span>{% endif %}
+        <span class="loc">{% if place %}{% for x in place %}{{x|hl(q)}}{% if not loop.last %}, {% endif %}{% endfor %} · {% endif %}{% if 'country' in fields %}<span class="cc" title="{{r.country}}">{{r.code}}</span>{% endif %}</span>
+        {% if 'network' in fields and r.network %}<span class="net">{{r.network|hl(q)}}</span>{% endif %}
+      </span>
+      {{ status_line(r.status) }}
+    </a>
     <div class="result-contact">
-      <span class="avatar" aria-hidden="true">{{((p.name if 'name' in fields else '') or '#')[:1]|upper}}</span>
-      <div class="result-contact-body">
+      {% if p and (('name' in fields and p.name) or ('email' in fields and p.email) or ('phone' in fields and p.phone)) %}
+      <div class="who">
         {% if 'name' in fields and p.name %}<strong>{{p.name|hl(q)}}</strong>{% endif %}
-        {% if 'job_position' in fields and p.job_position %}<small>{{p.job_position|hl(q)}}</small>{% endif %}
-        {% if 'email' in fields and p.email %}<span class="detail-line">{{p.email|hl(q)}}</span>{% endif %}
-        {% if 'phone' in fields and p.phone %}<span class="detail-line">{{p.phone|hl(q)}}</span>{% endif %}
+        {% if 'job_position' in fields and p.job_position %}<span>{{p.job_position|hl(q)}}</span>{% endif %}
       </div>
+      <div class="reach">
+        {% set mail=p.email|first_email if 'email' in fields else '' %}
+        {% set tel=p.phone|tel if 'phone' in fields else '' %}
+        {% if mail %}<span class="reach-line"><a href="mailto:{{mail}}">{{p.email|hl(q)}}</a><button type="button" class="icon-btn" data-copy="{{mail}}" aria-label="Copy email {{mail}}">{{icon('copy',15)}}</button></span>{% endif %}
+        {% if 'phone' in fields and p.phone %}<span class="reach-line">{% if tel %}<a href="{{tel}}">{{p.phone|hl(q)}}</a>{% else %}{{p.phone|hl(q)}}{% endif %}<button type="button" class="icon-btn" data-copy="{{p.phone}}" aria-label="Copy phone {{p.phone}}">{{icon('copy',15)}}</button></span>{% endif %}
+      </div>
+      {% else %}
+      <span class="muted">No contact details</span>
+      {% endif %}
     </div>
-    {% endif %}
-    <div class="view">
-      <span class="contact-count">{% if r.contacts==0 %}No contacts{% elif r.matched and r.matched<r.contacts %}{{r.matched}} of {{r.contacts}} contacts match{% else %}{{r.contacts}} contact{{'s' if r.contacts!=1}}{% endif %}</span>
-      <span>View details →</span>
-    </div>
-  </a>
+    <a class="result-count" href="{{url_for('company',company_id=r.id)}}">{% if r.contacts==0 %}No contacts{% elif r.matched and r.matched<r.contacts %}{{r.matched}} of {{r.contacts}} contacts match{% else %}{{r.contacts}} contact{{'s' if r.contacts!=1}}{% endif %} →</a>
+  </li>
   {% endfor %}
-</div>
+</ol>
 
 {% if pages>1 %}
 <nav class="pager" aria-label="Search result pages">
@@ -90,9 +110,9 @@
 {% endif %}
 {% else %}
 <div class="empty">
-  <div class="empty-icon" aria-hidden="true">⌕</div>
+  <div class="empty-icon" aria-hidden="true">{{icon('search',24)}}</div>
   <h3>{% if q %}No companies match “{{q}}”{% if country %} in {{country}}{% endif %}{% else %}No companies you can see in {{country}}{% endif %}</h3>
-  <p>Check the spelling, try fewer words, or search by a different detail such as a city or contact name.</p>
+  <p>Check the spelling, try fewer words, or search by a different detail such as a city, agent ID or contact name.</p>
 </div>
 {% endif %}
 {% endif %}

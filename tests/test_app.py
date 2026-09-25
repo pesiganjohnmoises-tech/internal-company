@@ -50,7 +50,7 @@ import re
 from utils.importer import agent_id_value
 def found(c,term):
     html=c.get("/search",query_string={"q":term}).data.decode()
-    return [re.sub("<[^>]+>","",h) for h in re.findall(r"<h3>(.*?)</h3>",html) if "No companies" not in h]
+    return [re.sub("<[^>]+>","",h) for h in re.findall(r'class="result-name">(.*?)</span>',html)]
 check("startup backfilled agent_id from stored rows",q("SELECT agent_id FROM companies WHERE company_name='Merlion Bridge Logistics Pte. Ltd.'")=="SGP001")
 check("agent ID search finds the company",found(adm,"SGP001")==["Merlion Bridge Logistics Pte. Ltd."])
 check("agent ID search ignores case and spaces",found(adm,"  sgp001 ")==["Merlion Bridge Logistics Pte. Ltd."])
@@ -85,9 +85,9 @@ check("user company view: old sales header kept only as XLSX hint",">KG Sales<" 
 
 # --- Search matches what the company page shows (v8) ---------------------------------------------------
 network=q("SELECT network FROM companies WHERE network IS NOT NULL AND network<>'' LIMIT 1")
-check("admin can search by network",b"result-card" in adm.get(f"/search?q={network}").data)
-check("User can search Network, which their company page shows",b"result-card" in client("ann").get(f"/search?q={network}").data)
-check("User can still search visible fields",b"result-card" in client("ann").get("/search?q=Singapore").data)
+check("admin can search by network",b"result-row" in adm.get(f"/search?q={network}").data)
+check("User can search Network, which their company page shows",b"result-row" in client("ann").get(f"/search?q={network}").data)
+check("User can still search visible fields",b"result-row" in client("ann").get("/search?q=Singapore").data)
 check("invalid offset does not crash",client("ann").get("/search?q=a&offset=abc").status_code==200)
 
 # --- Search pagination: one card per company, numbered pages ------------------------------------------
@@ -96,15 +96,15 @@ india=q("SELECT COUNT(*) FROM companies co JOIN countries cn ON cn.id=co.country
 seen=[]; page=1
 while True:
     h=adm.get(f"/search?q=india&page={page}").data.decode()
-    found=re.findall(r'class="result-card" href="/company/(\d+)"',h); seen+=found
+    found=re.findall(r'class="result-main" href="/company/(\d+)"',h); seen+=found
     if f'page={page+1}"' not in h or page>20: break
     page+=1
 check("search pages cover every matching company exactly once",len(seen)==len(set(seen))==india)
-check("summary shows company range",f"of <strong>{india}</strong> companies" in adm.get("/search?q=india").data.decode())
+check("summary shows company range",f"of <strong>{india}</strong> agents" in adm.get("/search?q=india").data.decode())
 h=adm.get("/search?q=india&page=2").data.decode()
 check("page 2 shows 21–40 with current page marked","Showing <strong>21–40</strong>" in h and 'aria-current="page">2<' in h)
 check("legacy ?offset=20 opens page 2",'aria-current="page">2<' in adm.get("/search?q=india&offset=20").data.decode())
-check("page beyond range clamps to last page",b"result-card" in adm.get("/search?q=india&page=999").data)
+check("page beyond range clamps to last page",b"result-row" in adm.get("/search?q=india&page=999").data)
 h=adm.get("/search?q=%3Cscript%3Ealert(1)%3C/script%3E").data.decode()
 check("query is escaped, no script injection","<script>alert(1)" not in h and "No companies match" in h)
 check("matched terms highlighted","<mark>" in adm.get("/search?q=india").data.decode())
@@ -255,8 +255,8 @@ check("export: Users and Full Access cannot export",client("moises").get("/admin
 for h in A.logging.getLogger().handlers: h.flush()
 check("export: logged with admin name","Admin admin exported contacts" in (TMP/"app.log").read_text(encoding="utf-8",errors="ignore"))
 h=adm.get("/admin").data.decode()
-qa=re.findall(r'class="quick-action" href="([^"]+)"',h)
-check("quick actions: six links, all working for admin",len(qa)==6 and all(adm.get(u).status_code==200 for u in qa))
+qa=re.findall(r'<a class="(?:primary|secondary)" href="([^"]+)"',h.split('<div class="head-actions">')[1].split("</div>")[0])
+check("header actions: four links, all working for admin",len(qa)==4 and all(adm.get(u).status_code==200 for u in qa))
 anchors=re.findall(r'<nav class="section-nav"[^>]*>(.*?)</nav>',h,re.S)[0]
 targets=re.findall(r'href="#([^"]+)"',anchors)
 check("section nav: every jump link has a matching panel",len(targets)==7 and all(f'id="{t}"' in h for t in targets))
@@ -340,7 +340,8 @@ check("fix 11: sessions from before this update are signed out",c.get("/search")
 check("fix 11: active session keeps working",client("ann").get("/search").status_code==200)
 
 # --- Existing pages -----------------------------------------------------------------------------------
-check("admin pages load",all(adm.get(p).status_code==200 for p in ("/admin","/admin/users","/admin/users/create",f"/admin/users/{ids['ann']}","/admin/imports","/admin/database","/admin/records")))
+check("admin pages load",all(adm.get(p).status_code==200 for p in ("/admin","/admin/users","/admin/users/create",f"/admin/users/{ids['ann']}","/admin/imports","/admin/records")))
+check("old Database page redirects to Records",adm.get("/admin/database").headers.get("Location","").endswith("/admin/records"))
 check("Users blocked from admin",client("ann").get("/admin").status_code==403)
 
 # --- First/last name and search greeting (v7) --------------------------------------------------------
@@ -386,7 +387,7 @@ v8={u:q("SELECT id FROM users WHERE username=?",u) for u in ("v8admin","v8user",
 boss=client("v8admin")
 sg_cid=q("SELECT id FROM countries WHERE name='Singapore'")
 sg_all=[str(r[0]) for r in con.execute("SELECT id FROM companies WHERE country_id=?",(sg_cid,))]
-def cards(c,**params): return re.findall(r'class="result-card" href="/company/(\d+)"',c.get("/search",query_string=params).data.decode())
+def cards(c,**params): return re.findall(r'class="result-main" href="/company/(\d+)"',c.get("/search",query_string=params).data.decode())
 
 # 1 "All companies in a country", including companies added later
 boss.post(f"/admin/users/{v8['v8user']}",data={"role":"USER","status":"ACTIVE","all_companies":[str(sg_cid)]})
@@ -401,7 +402,7 @@ check("all companies: other countries stay hidden",not [i for i in cards(client(
 ao={u["username"]:u for u in A.dashboard.access_overview(con,A.SALES_FIELDS,A.access_sql)["users"]}
 check("all companies: access overview counts the company added later",ao["v8user"]["visible"]==len(sg_all)+1 and ao["v8partial"]["visible"]==len(sg_all))
 h=boss.get(f"/admin/users/{v8['v8user']}").data.decode()
-check("all companies: editor shows the switch ticked",f'name="all_companies" value="{sg_cid}" data-country="{sg_cid}" checked' in h)
+check("all companies: editor shows the choice selected",f'name="scope-{sg_cid}" value="all" checked' in h)
 for hd in _logging.getLogger().handlers: hd.flush()
 check("all companies: audit log records the change","whole countries 0->1" in (TMP/"app.log").read_text(encoding="utf-8",errors="ignore"))
 boss.post(f"/admin/users/{v8['v8user']}",data={"role":"USER","status":"ACTIVE","countries":[str(sg_cid)]})
@@ -539,6 +540,44 @@ with A.app.test_request_context():
     body,code=A.server_error(None)
 check("server error page renders",code==500 and "Something went wrong on our side" in body)
 check("dates shown in Philippine Time",">24 Sep 2026, 11:04 PHT<" in str(A.when("2026-09-24T03:04:10Z")) and A.when(None)=="—" and A.when("not a date")=="not a date")
+
+# === v9: directory redesign ============================================================================
+from datetime import date as _date, timedelta as _td
+st_id=q("SELECT id FROM companies WHERE country_id=? ORDER BY id LIMIT 1",sg_cid)
+set_source(st_id,**{"KYC Status":"Pending","Agent Status":"Active","Network Expiry":(_date.today()+_td(days=20)).strftime("%d-%b-%Y")})
+st_name=q("SELECT company_name FROM companies WHERE id=?",st_id)
+h=boss.get("/search",query_string={"q":st_name}).data.decode()
+check("results: status line shows agent status, KYC and expiry",'tone-good">Active<' in h and 'tone-warn">KYC Pending<' in h and "Network expires in 20 days" in h)
+h=boss.get(f"/company/{st_id}").data.decode()
+check("company: same status line in the header","KYC Pending" in h and "Network expires in 20 days" in h)
+check("status agrees with the overview's attention list",any(x["id"]==st_id for x in A.dashboard.attention(con)["kyc_pending"]))
+check("status: completed KYC is not flagged",not [f for f in A.agent_status('{"KYC Status":"Approved"}')["flags"]])
+check("status: unreadable expiry is not guessed",A.agent_status('{"Network Expiry":"see contract"}')["flags"]==[])
+hu=client("v8user","Brand-New-Pass-2026!").get(f"/company/{st_id}").data.decode()
+check("company: record number and source file are admin-only","Record #" in h and "Record #" not in hu and "Source row" not in hu)
+check("company: upload prefix removed from the source name",not re.search(r"[0-9a-f]{12}_\w+\.xlsx",h))
+check("company: contacts come before the detail sections",h.index('id="sec-contacts"')<h.index('class="detail-sections"'))
+check("company: copy buttons on contact email/phone",'data-copy=' in h)
+check("company: recently-viewed item is JSON-escaped",'<script type="application/json" id="recent-item">' in h and "</script>" in h.split('id="recent-item">')[1])
+con.execute("UPDATE contacts SET landline_no=NULL WHERE company_id=?",(st_id,)); con.commit()
+check("company: a contact column nobody fills in is hidden","<th>Landline No</th>" not in boss.get(f"/company/{st_id}").data.decode())
+# Start page
+h=client("v8user","Brand-New-Pass-2026!").get("/search").data.decode()
+check("start page: tiles only for granted countries, with counts",'href="/search?country=Singapore"' in h and "country=India" not in h and re.search(r'tile-count">\d+ agents?<',h))
+check("start page: attention link for admins only","need attention" in boss.get("/search").data.decode() and "need attention" not in h)
+check("start page: recently viewed placeholder present",'id="recent-list"' in h)
+check("header: Directory comes before Admin",(lambda b: b.index(">Directory<")<b.index(">Admin<"))(boss.get("/search").data.decode()))
+# Per-country access choice
+boss.post(f"/admin/users/{v8['v8partial']}",data={"role":"USER","status":"ACTIVE","countries":[str(sg_cid)],f"scope-{sg_cid}":"all"})
+check("access form: 'All companies' choice saved for a ticked country",con.execute("SELECT all_companies FROM user_country_access WHERE user_id=? AND country_id=?",(v8["v8partial"],sg_cid)).fetchone()[0]==1)
+india_cid=q("SELECT id FROM countries WHERE name='India'")
+boss.post(f"/admin/users/{v8['v8partial']}",data={"role":"USER","status":"ACTIVE","countries":[str(sg_cid)],f"scope-{sg_cid}":"some",f"scope-{india_cid}":"all"})
+check("access form: choice for an unticked country grants nothing",q("SELECT COUNT(*) FROM user_country_access WHERE user_id=? AND country_id=?",v8["v8partial"],india_cid)==0
+      and q("SELECT all_companies FROM user_country_access WHERE user_id=? AND country_id=?",v8["v8partial"],sg_cid)==0)
+check("create user page has no access section (it is set after creating)","card-directory" not in boss.get("/admin/users/create").data.decode())
+# Link helpers
+check("tel link uses the first number only",A.tel_href("+65 8000 0001 / +65 8000 0002")=="tel:+6580000001" and A.tel_href("n/a")=="")
+check("mailto uses the first address only",A.first_email("a@x.example; b@y.example")=="a@x.example" and A.first_email("none")=="")
 
 con.close()
 passed=sum(ok for _,ok in results)

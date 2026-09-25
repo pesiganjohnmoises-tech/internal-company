@@ -49,3 +49,50 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 });
+
+// Copy buttons (data-copy): copy the value and confirm on the button itself.
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-copy]');
+  if (!button || !navigator.clipboard) return;
+  event.preventDefault();
+  navigator.clipboard.writeText(button.dataset.copy).then(() => {
+    button.classList.add('copied');
+    button.setAttribute('aria-label', 'Copied');
+    setTimeout(() => button.classList.remove('copied'), 1400);
+  });
+});
+
+// Recently viewed agents: kept in this browser only, per signed-in user, and cleared on sign-out.
+// Opening a link still goes through the server's access check.
+(() => {
+  const user = document.body.dataset.user;
+  if (!user) return;
+  const key = 'recent-agents:' + user;
+  const read = () => { try { return JSON.parse(localStorage.getItem(key)) || []; } catch (e) { return []; } };
+  const write = list => { try { localStorage.setItem(key, JSON.stringify(list)); } catch (e) { /* storage unavailable */ } };
+  const current = document.getElementById('recent-item');
+  if (current) {
+    try {
+      const item = JSON.parse(current.textContent);
+      write([item, ...read().filter(x => x.id !== item.id)].slice(0, 8));
+    } catch (e) { /* malformed item: skip */ }
+  }
+  const list = document.getElementById('recent-list');
+  if (list) {
+    const items = read();
+    items.forEach(item => {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = '/company/' + encodeURIComponent(item.id);
+      const name = document.createElement('span'); name.className = 'recent-name'; name.textContent = item.name;
+      const meta = document.createElement('span'); meta.className = 'recent-meta';
+      meta.textContent = [item.agent, item.place, item.country].filter(Boolean).join(' · ');
+      a.append(name, meta); li.append(a); list.append(li);
+    });
+    list.hidden = items.length === 0;
+    document.getElementById('recent-empty').hidden = items.length > 0;
+  }
+  document.querySelectorAll('form[data-signout]').forEach(form => form.addEventListener('submit', () => {
+    try { localStorage.removeItem(key); } catch (e) { /* storage unavailable */ }
+  }));
+})();

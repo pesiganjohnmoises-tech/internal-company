@@ -10,7 +10,7 @@ from pathlib import Path
 from utils.fields import load, is_empty, parse_date, tone, columns
 from utils.importer import norm, detect_country
 
-EXPIRY_SOON_DAYS=90
+from utils.status import EXPIRY_SOON_DAYS
 
 def companies_with_source(con):
     """[(row, {normalized header: value})] for every company."""

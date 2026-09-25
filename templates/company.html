@@ -1,36 +1,76 @@
 {% extends "base.html" %}
-{% from "_fields.html" import value, field_list %}
+{% from "_fields.html" import value, field_list %}{% from "_icons.html" import icon %}
 {% block title %}{{company.company_name if 'company_name' in fields or user.role in ('ADMIN','FULL_ACCESS') else 'Record'}} · Directory{% endblock %}
 {% block content %}
-{% set h=detail.header %}
+{% set h=detail.header %}{% set by=detail.by_key %}
 {% set can_name=user.role in ('ADMIN','FULL_ACCESS') or 'company_name' in fields %}
+{% set place=[company.city,company.state]|select|join(', ') %}
+{% set agent_id=company.agent_id or (h.x_agentidfinal.value.text if h.x_agentidfinal else '') %}
 <a class="back" href="{{back_url}}">← Back to directory</a>
 
 <header class="company-header">
-  <div class="company-identity">
-    <span class="company-mark" aria-hidden="true">{{(company.company_name[:1] if can_name else '#')|upper}}</span>
+  <div class="company-top">
     <div class="company-title">
-      <p class="eyebrow">Company{% if user.role in ('ADMIN','FULL_ACCESS') or 'country' in fields %}<span class="dot"></span>{{company.country}}{% endif %}</p>
+      <p class="eyebrow"><span class="cc">{{code}}</span> {{company.country}}{% if agent_id %} · <span class="ref">{{agent_id}}</span>{% endif %}</p>
       <h1>{{company.company_name if can_name else 'Company record'}}</h1>
       {% if h.x_alias %}<p class="company-alias">Also known as {{h.x_alias.value.text}}</p>{% endif %}
-      {% if h.x_agentstatus or h.network %}<div class="company-tags">
-        {% if h.x_agentstatus %}<span class="badge {{h.x_agentstatus.value.tone}}">{{h.x_agentstatus.value.text}}</span>{% endif %}
-        {% if h.network %}<span class="badge neutral">{{h.network.value.text}}</span>{% endif %}
-      </div>{% endif %}
+      {% if status.flags %}<p class="status-line">{% for i in status.flags %}<span class="status-item tone-{{i.tone}}">{{i.text}}</span>{% endfor %}</p>{% endif %}
     </div>
+    {% if user.role=='ADMIN' %}
+    <p class="admin-meta" title="Visible to administrators only">Record #{{company.id}}{% if source_name %} · {{source_name}}, row {{company.source_row}}{% endif %}</p>
+    {% endif %}
   </div>
-  <dl class="company-facts">
-    <div><dt>Company ID</dt><dd>{{company.id}}</dd></div>
-    {% if h.x_agentidfinal %}<div><dt>{{h.x_agentidfinal.label}}</dt><dd>{{h.x_agentidfinal.value.text}}</dd></div>{% endif %}
+  <dl class="key-facts">
+    {% if place %}<div><dt>Location</dt><dd>{{place}}</dd></div>{% endif %}
+    {% if company.network %}<div><dt>Network</dt><dd>{{company.network}}</dd></div>{% endif %}
     <div><dt>Contacts</dt><dd>{{detail.contacts|length}}</dd></div>
-    {% if user.role=='ADMIN' and company.source_file %}<div><dt>Source</dt><dd title="{{company.source_file}}">{{company.source_file}} · row {{company.source_row}}</dd></div>{% endif %}
+    {% for key,label in sales_labels.items() if key in by and not by[key].value.empty %}<div><dt>{{label}}</dt><dd>{{by[key].value.text}}</dd></div>{% endfor %}
   </dl>
 </header>
 
 <nav class="section-nav" aria-label="Record sections">
-  {% for s in detail.sections %}<a href="#sec-{{s.id}}">{{s.title}}</a>{% endfor %}
   <a href="#sec-contacts">Contacts <span>{{detail.contacts|length}}</span></a>
+  {% for s in detail.sections %}<a href="#sec-{{s.id}}">{{s.title}}</a>{% endfor %}
 </nav>
+
+<section class="panel contacts-section" id="sec-contacts" aria-labelledby="sec-contacts-title">
+  <div class="panel-head">
+    <h2 id="sec-contacts-title">Contacts <span class="count">{{detail.contacts|length}}</span></h2>
+    {% if detail.contacts|length > 4 %}
+    <label class="contact-filter"><span class="sr-only">Filter contacts</span>
+      <input type="search" id="contact-filter" placeholder="Filter by name, role, email, phone…" autocomplete="off">
+    </label>
+    {% endif %}
+  </div>
+  {% if detail.contacts %}
+  {% set cols=detail.contact_columns|rejectattr('0','equalto','address')|list %}
+  <div class="table-wrap">
+    <table class="data-table contact-table" id="contact-cards">
+      <thead><tr><th>Name</th>{% for key,label in cols %}<th>{{label}}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for c in detail.contacts %}{% set addr=c.by_key.get('address') %}
+        <tr class="contact-card" data-search="{{c.search}}">
+          <td class="contact-name">
+            <strong{% if not c.named %} class="unnamed"{% endif %}>{{c.name}}</strong>
+            {% if addr and not addr.value.empty and not addr.value.same %}<span class="cell-sub">{{addr.value.text}}</span>{% endif %}
+            {% if c.differs %}<details class="row-values"><summary>Differs from company record ({{c.differs|length}})</summary>{{ field_list(c.differs, "compact-list") }}</details>{% endif %}
+            {% if user.role=='ADMIN' and c.source_row %}<span class="cell-sub">Source row {{c.source_row}}</span>{% endif %}
+          </td>
+          {% for key,label in cols %}{% set f=c.by_key[key] %}
+          <td data-label="{{label}}" class="kind-{{f.kind}}{{' is-empty' if f.value.empty}}">
+            {{ value(f.value) }}{% if f.kind in ('email','phone') and not f.value.empty %}<button type="button" class="icon-btn" data-copy="{{f.value.links|map('first')|join(', ') if f.value.links else f.value.text}}" aria-label="Copy {{label|lower}}">{{icon('copy',14)}}</button>{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="empty-filter" id="contact-empty" hidden>No contacts match this filter.</p>
+  {% else %}
+  <div class="empty compact-empty"><h3>No contacts</h3><p>This company has no contact rows in the source file.</p></div>
+  {% endif %}
+</section>
 
 <div class="detail-sections">
   {% for s in detail.sections %}
@@ -42,39 +82,6 @@
   </section>
   {% endfor %}
 </div>
-
-<section class="contacts-section" id="sec-contacts" aria-labelledby="sec-contacts-title">
-  <div class="contacts-head">
-    <h2 id="sec-contacts-title">Contacts <span class="count">{{detail.contacts|length}}</span></h2>
-    {% if detail.contacts|length > 4 %}
-    <label class="contact-filter"><span class="sr-only">Filter contacts</span>
-      <input type="search" id="contact-filter" placeholder="Filter by name, role, email, phone…" autocomplete="off">
-    </label>
-    {% endif %}
-  </div>
-  {% if detail.contacts %}
-  <div class="contact-cards" id="contact-cards">
-    {% for c in detail.contacts %}
-    <article class="contact-card" data-search="{{c.search}}" aria-label="{{c.name}}">
-      <div class="contact-card-head">
-        <span class="avatar{% if not c.named %} muted-avatar{% endif %}" aria-hidden="true">{{c.initials}}</span>
-        <h3{% if not c.named %} class="unnamed"{% endif %}>{{c.name}}</h3>
-        {% if user.role=='ADMIN' and c.source_row %}<span class="row-ref" title="Source XLSX row">Row {{c.source_row}}</span>{% endif %}
-      </div>
-      {{ field_list(c.fields, "compact-list") }}
-      {% if c.differs %}
-      <details class="row-values">
-        <summary>Differs from company record <span>{{c.differs|length}}</span></summary>
-        {{ field_list(c.differs, "compact-list") }}
-      </details>
-      {% endif %}
-    </article>
-    {% endfor %}
-  </div>
-  <p class="empty-filter" id="contact-empty" hidden>No contacts match this filter.</p>
-  {% else %}
-  <div class="empty"><h3>No contacts</h3><p>This company has no contact rows in the source file.</p></div>
-  {% endif %}
-</section>
 {% if not detail.has_source %}<p class="tiny">Only the core fields are available for this record. Re-import its workbook to capture all XLSX columns.</p>{% endif %}
+<script type="application/json" id="recent-item">{{ {"id":company.id,"name":company.company_name if can_name else "Company record","country":company.country,"agent":agent_id,"place":place}|tojson }}</script>
 {% endblock %}

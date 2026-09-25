@@ -75,24 +75,46 @@
   </section>
   {% endif %}
 
+  {% if target %}
   <section class="admin-panel settings-card user-scoped" aria-labelledby="card-directory">
     <header class="card-head">
       <div>
         <h2 id="card-directory">Directory access</h2>
-        <p class="muted">A User needs country access and, within it, either all companies or the individual companies ticked below.</p>
+        <p class="muted">Tick each country this User may search. “All companies” also covers companies added by future imports, so the account needs no update after an import.</p>
       </div>
+      <span class="count-pill" data-count-for="countries">{{selected_countries|length}} of {{countries|length}}</span>
     </header>
     <p class="role-note">This account's user type can view every record; country and company selections only apply to <strong>User</strong>.</p>
-
-    <div class="subhead"><h3>Countries</h3><span class="count-pill" data-count-for="countries">{{selected_countries|length}} of {{countries|length}}</span></div>
+    {% if countries %}
     <label class="checkrow select-all"><input type="checkbox" data-select-all="countries"><span><strong>Select all countries</strong></span></label>
-    <div class="check-grid">{% for c in countries %}<label class="checkrow"><input type="checkbox" name="countries" value="{{c.id}}" {% if c.id in selected_countries %}checked{% endif %}><span>{{c.name}}</span></label>{% else %}<p class="muted">Import a workbook to add countries.</p>{% endfor %}</div>
-
-    <div class="subhead separated"><h3>Companies</h3><span class="count-pill" data-count-for="companies">{{selected_companies|length}} of {{(companies|default([]))|length}}</span></div>
-    <p class="field-help">Only companies in selected countries are saved. “All companies” also covers companies added by future imports, so you don't have to update this user after each import.</p>
-    <label class="checkrow select-all"><input type="checkbox" data-select-all="companies"><span><strong>Select all companies</strong></span></label>
-    <div class="company-access">{% for country in countries %}{% set cos=(companies|default([]))|selectattr('country_id','equalto',country.id)|list %}<details{% if country.id in selected_all %} data-all{% endif %}><summary><span>{{country.name}}</span><span class="summary-count">{{cos|selectattr('id','in',selected_companies)|list|length}} of {{cos|length}} selected</span></summary><label class="checkrow all-row"><input type="checkbox" name="all_companies" value="{{country.id}}" data-country="{{country.id}}" {% if country.id in selected_all %}checked{% endif %}><span><strong>All companies in {{country.name}}</strong>, including companies added by future imports</span></label><div class="check-grid">{% for co in cos %}<label class="checkrow"><input type="checkbox" name="companies" value="{{co.id}}" {% if co.id in selected_companies %}checked{% endif %}><span>{{co.company_name}}</span></label>{% endfor %}</div></details>{% endfor %}</div>
+    <div class="country-access">
+      {% for country in countries %}
+      {% set cos=(companies|default([]))|selectattr('country_id','equalto',country.id)|list %}
+      {% set on=country.id in selected_countries %}{% set whole=country.id in selected_all or not on %}
+      <div class="country-block{% if on %} is-on{% endif %}{% if whole %} scope-all{% endif %}" data-country-block>
+        <label class="country-toggle">
+          <input type="checkbox" name="countries" value="{{country.id}}" {% if on %}checked{% endif %}>
+          <strong>{{country.name}}</strong><span class="muted">{{cos|length}} compan{{'y' if cos|length==1 else 'ies'}}</span>
+        </label>
+        <div class="country-scope" role="radiogroup" aria-label="Companies in {{country.name}}">
+          <label class="scope-option"><input type="radio" name="scope-{{country.id}}" value="all" {% if whole %}checked{% endif %}><span>All companies <small>incl. future imports</small></span></label>
+          <label class="scope-option"><input type="radio" name="scope-{{country.id}}" value="some" {% if not whole %}checked{% endif %}><span>Only selected <small class="summary-count">{{cos|selectattr('id','in',selected_companies)|list|length}} of {{cos|length}}</small></span></label>
+        </div>
+        <details class="company-picker"{% if on and not whole %} open{% endif %}>
+          <summary>Choose companies in {{country.name}}</summary>
+          {% if cos %}
+          <label class="checkrow select-all"><input type="checkbox" data-select-country><span>Select all in {{country.name}}</span></label>
+          <div class="check-grid">{% for co in cos %}<label class="checkrow"><input type="checkbox" name="companies" value="{{co.id}}" {% if co.id in selected_companies %}checked{% endif %}><span>{{co.company_name}}</span></label>{% endfor %}</div>
+          {% else %}<p class="muted">No companies imported for {{country.name}} yet.</p>{% endif %}
+        </details>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">Import a workbook to add countries.</p>
+    {% endif %}
   </section>
+  {% endif %}
 
   <div class="save-bar">
     <span class="muted">Changes apply when you save.</span>
@@ -111,34 +133,39 @@
 {% endif %}
 
 <script>
-document.querySelectorAll('[data-select-all]').forEach(master => {
-  master.addEventListener('change', () => {
-    const name = master.dataset.selectAll;
-    document.querySelectorAll('input[name="' + name + '"]').forEach(box => { box.checked = master.checked; });
-    refresh();
-  });
-});
 const form = document.querySelector('.user-form');
 const roleSelect = document.getElementById('role-select');
 function refresh() {
   form.dataset.role = roleSelect.value;
+  document.querySelectorAll('[data-country-block]').forEach(block => {
+    const on = block.querySelector('input[name="countries"]').checked;
+    const whole = block.querySelector('input[value="all"]').checked;
+    block.classList.toggle('is-on', on);
+    block.classList.toggle('scope-all', whole);
+    const boxes = [...block.querySelectorAll('input[name="companies"]')];
+    const picked = boxes.filter(b => b.checked).length;
+    block.querySelector('.summary-count').textContent = picked + ' of ' + boxes.length;
+    const master = block.querySelector('[data-select-country]');
+    if (master) master.checked = boxes.length > 0 && picked === boxes.length;
+  });
   document.querySelectorAll('[data-count-for]').forEach(pill => {
     const boxes = [...document.querySelectorAll('input[name="' + pill.dataset.countFor + '"]')];
     pill.textContent = boxes.filter(b => b.checked).length + ' of ' + boxes.length;
     const master = document.querySelector('[data-select-all="' + pill.dataset.countFor + '"]');
     if (master) master.checked = boxes.length > 0 && boxes.every(b => b.checked);
   });
-  document.querySelectorAll('.company-access details').forEach(group => {
-    const boxes = [...group.querySelectorAll('input[name="companies"]')];
-    const all = group.querySelector('input[name="all_companies"]').checked;
-    group.toggleAttribute('data-all', all);
-    group.querySelector('.summary-count').textContent = all ? 'All companies, including future ones' : boxes.filter(b => b.checked).length + ' of ' + boxes.length + ' selected';
-  });
 }
-// "All companies" needs the country itself, so ticking it ticks the country too.
-document.querySelectorAll('input[name="all_companies"]').forEach(box => box.addEventListener('change', () => {
-  const country = document.querySelector('input[name="countries"][value="' + box.dataset.country + '"]');
-  if (box.checked && country) country.checked = true;
+document.querySelectorAll('[data-select-all]').forEach(master => master.addEventListener('change', () => {
+  document.querySelectorAll('input[name="' + master.dataset.selectAll + '"]').forEach(box => { box.checked = master.checked; });
+  refresh();
+}));
+document.querySelectorAll('[data-select-country]').forEach(master => master.addEventListener('change', () => {
+  master.closest('[data-country-block]').querySelectorAll('input[name="companies"]').forEach(box => { box.checked = master.checked; });
+  refresh();
+}));
+// Choosing "Only selected" opens that country's company list.
+document.querySelectorAll('.country-scope input[value="some"]').forEach(radio => radio.addEventListener('change', () => {
+  if (radio.checked) radio.closest('[data-country-block]').querySelector('.company-picker').open = true;
 }));
 roleSelect.addEventListener('change', refresh);
 form.addEventListener('change', refresh);

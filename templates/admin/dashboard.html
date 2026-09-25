@@ -9,19 +9,21 @@
   <li><a href="{{url_for('company',company_id=i.id)}}"><span class="dash-list-name">{{i.name}}</span><span class="dash-list-meta">{{i.country}} · {{i.detail}}</span></a></li>{% endfor %}
 </ul>
 {%- endmacro %}
-<div class="admin-head"><div><div class="eyebrow">ADMINISTRATION</div><h1>Directory overview</h1><p class="muted">Manage people, access and source data.</p></div><span class="admin-badge">ADMIN</span></div>
+<div class="admin-head">
+  <div>
+    <div class="eyebrow">ADMINISTRATION</div>
+    <h1>Directory overview</h1>
+    <p class="muted">{{stats.companies}} companies · {{stats.contacts}} contacts · {{stats.countries}} countries · {{stats.users}} user accounts</p>
+  </div>
+  <div class="head-actions">
+    <a class="secondary" href="{{url_for('imports_page')}}">{{icon('upload',16)}}Upload workbook</a>
+    <a class="secondary" href="{{url_for('admin_export',kind='companies')}}" download>{{icon('download',16)}}Companies CSV</a>
+    <a class="secondary" href="{{url_for('admin_export',kind='contacts')}}" download>{{icon('download',16)}}Contacts CSV</a>
+    <a class="primary" href="{{url_for('user_create')}}">{{icon('plus',16)}}Create user</a>
+  </div>
+</div>
 {{ admin_nav('admin_dashboard') }}
 {% if default_pw %}<div class="notice error" role="alert"><strong>Change default passwords:</strong> {{default_pw|join(", ")}} still {{"uses" if default_pw|length==1 else "use"}} the initial password from the README. Reset {{"it" if default_pw|length==1 else "them"}} from Users → Edit access.</div>{% endif %}
-<div class="stats">{% for label,val in [('Users',stats.users),('Countries',stats.countries),('Companies',stats.companies),('Contacts',stats.contacts)] %}<div class="stat"><span>{{label}}</span><strong>{{val}}</strong></div>{% endfor %}</div>
-
-<nav class="quick-actions" aria-label="Quick actions">
-  <a class="quick-action" href="{{url_for('user_create')}}"><strong>＋ Create user</strong><span>New account and access</span></a>
-  <a class="quick-action" href="{{url_for('imports_page')}}"><strong>Upload workbook</strong><span>Replace a country's data</span></a>
-  <a class="quick-action" href="{{url_for('search')}}"><strong>Search directory</strong><span>Companies and contacts</span></a>
-  <a class="quick-action" href="{{url_for('admin_records')}}"><strong>Company records</strong><span>Source file and row</span></a>
-  <a class="quick-action" href="{{url_for('admin_export',kind='companies')}}" download><strong>Export companies</strong><span>CSV · all XLSX columns</span></a>
-  <a class="quick-action" href="{{url_for('admin_export',kind='contacts')}}" download><strong>Export contacts</strong><span>CSV · every contact</span></a>
-</nav>
 <nav class="section-nav" aria-label="Overview sections">
   {% for id,label,key in [('attention','Needs attention','attention'),('quality','Data quality','quality'),('breakdown','Countries & networks','breakdown'),('sales','Sales coverage','sales'),('access','Access','access'),('import-health','Import health','imports'),('activity','Activity','activity')] %}
   <a href="#{{id}}">{{label}}{% if key=='attention' and panels.attention.data and panels.attention.data.total %} <span>{{panels.attention.data.total}}</span>{% endif %}{% if panels[key].error %} <span>!</span>{% endif %}</a>
@@ -85,7 +87,7 @@
 <section class="admin-panel dash-panel" id="breakdown" aria-labelledby="breakdown-title">
   <div class="section-head">
     <div><h2 id="breakdown-title">Countries &amp; networks</h2><p class="muted dash-sub">Where the {{p.data.total if p.data else ''}} companies are, and which networks they belong to. Select a row to search for it.</p></div>
-    <a class="secondary small dash-link" href="{{url_for('database_status')}}">Database details →</a>
+    <a class="secondary small dash-link" href="{{url_for('admin_records')}}">All records →</a>
   </div>
   {% if p.error %}{{ panel_error() }}
   {% elif not p.data.total %}<div class="dash-empty">No companies imported yet. Import a workbook from Excel imports.</div>
@@ -189,7 +191,7 @@
   {% endif %}
 </section>
 
-<section class="admin-panel"><div class="section-head"><h2>Recent imports</h2><a class="primary small" href="{{url_for('imports_page')}}">Manage imports →</a></div>{% if imports %}<div class="table-wrap"><table><thead><tr><th>Source</th><th>Country</th><th>Status</th><th>Processed</th><th>Imported</th><th>When</th></tr></thead><tbody>{% for i in imports %}<tr><td>{{i.source_file}}</td><td>{{i.country}}</td><td><span class="status {{'disabled' if i.status=='FAILED' else ''}}">{{i.status}}</span></td><td>{{i.records_processed}}</td><td>{{i.records_imported}}</td><td>{{i.imported_at|when}}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">No imports recorded yet.</p>{% endif %}</section>
+<section class="admin-panel"><div class="section-head"><h2>Recent imports</h2><a class="secondary small" href="{{url_for('imports_page')}}">Manage imports →</a></div>{% if imports %}<div class="table-wrap"><table><thead><tr><th>Source</th><th>Country</th><th>Status</th><th>Processed</th><th>Imported</th><th>When</th></tr></thead><tbody>{% for i in imports %}<tr><td>{{i.source_file}}</td><td>{{i.country}}</td><td><span class="status {{'disabled' if i.status=='FAILED' else ''}}">{{i.status}}</span></td><td>{{i.records_processed}}</td><td>{{i.records_imported}}</td><td>{{i.imported_at|when}}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">No imports recorded yet.</p>{% endif %}</section>
 {% set p=panels.activity %}
 <section class="admin-panel dash-panel" id="activity" aria-labelledby="activity-title">
   <div class="section-head">

@@ -2,7 +2,7 @@
 {# Admin section tabs; `active` is the endpoint name of the current page. #}
 {% macro admin_nav(active) -%}
 <nav class="admin-nav" aria-label="Administration">
-  {%- for endpoint,label,ico in [('admin_dashboard','Overview','grid'),('users','Users','users'),('imports_page','Excel imports','upload'),('database_status','Database','database'),('admin_records','Records','list')] %}
+  {%- for endpoint,label,ico in [('admin_dashboard','Overview','grid'),('users','Users','users'),('imports_page','Excel imports','upload'),('admin_records','Records','list')] %}
   <a href="{{url_for(endpoint)}}"{% if endpoint==active %} class="active" aria-current="page"{% endif %}>{{icon(ico,16)}}<span>{{label}}</span></a>
   {%- endfor %}
 </nav>

@@ -20,7 +20,7 @@
 <section class="admin-panel">
   {% if q %}<p class="muted table-summary">{{users|length}} of {{total_users}} users match “{{q}}”.</p>{% endif %}
   <div class="table-wrap">
-    <table>
+    <table class="data-table stack-table">
       <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Can see</th><th>Last sign-in</th><th>Created</th><th><span class="sr-only">Action</span></th></tr></thead>
       <tbody>
         {% set role_names={'USER':'User','FULL_ACCESS':'Full Access','ADMIN':'Admin'} %}
@@ -32,11 +32,11 @@
               <span><strong>{{u.display_name}}</strong>{% if u.display_name!=u.username %}<small class="table-sub">@{{u.username}}</small>{% endif %}</span>
             </span>
           </td>
-          <td><span class="badge role-badge role-{{u.role|lower}}">{{role_names.get(u.role,u.role)}}</span></td>
-          <td><span class="status {{'disabled' if u.status=='DISABLED' else ''}}">{{u.status}}</span></td>
-          <td>{% if u.role!='USER' %}All {{total_companies}} companies{% elif u.visible %}{{u.visible}} of {{total_companies}} companies{% else %}<span class="warn-text">No records</span>{% endif %}</td>
-          <td>{{u.last_login_at|when if u.last_login_at else 'Never'}}</td>
-          <td>{{u.created_at|when}}</td>
+          <td data-label="Role"><span class="badge role-badge role-{{u.role|lower}}">{{role_names.get(u.role,u.role)}}</span></td>
+          <td data-label="Status"><span class="status {{'disabled' if u.status=='DISABLED' else ''}}">{{u.status}}</span></td>
+          <td data-label="Can see">{% if u.role!='USER' %}All {{total_companies}} companies{% elif u.visible %}{{u.visible}} of {{total_companies}} companies{% else %}<span class="warn-text">No records</span>{% endif %}</td>
+          <td data-label="Last sign-in" class="nowrap">{{u.last_login_at|when if u.last_login_at else 'Never'}}</td>
+          <td data-label="Created" class="nowrap">{{u.created_at|when}}</td>
           <td><a class="table-link" href="{{url_for('user_edit',uid=u.id)}}">Edit access →</a></td>
         </tr>
         {% else %}

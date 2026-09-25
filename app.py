@@ -11,6 +11,7 @@ from flask_wtf.csrf import CSRFProtect
 from utils.importer import import_workbook, column_map, detect_country, backfill_source_data, agent_id_from_source, utcnow
 from utils.fields import build_company_detail
 from utils import dashboard
+from utils.status import agent_status, country_code
 
 ROOT=Path(__file__).resolve().parent
 DB=ROOT/"directory.db"; DATA=ROOT/"data"; IMPORTS=ROOT/"imports"
@@ -228,6 +229,20 @@ def when(value):
     try: d=datetime.fromisoformat(str(value).rstrip("Z")).replace(tzinfo=timezone.utc).astimezone(PHT)
     except ValueError: return value
     return Markup(f'<time datetime="{escape(value)}" title="{escape(value)} (UTC)">{d.day} {d:%b %Y, %H:%M} PHT</time>')
+@app.template_filter("source_name")
+def source_name(value):
+    """Workbook name without the random prefix uploads are stored under ("dc6a3c9498c6_india.xlsx" -> "india.xlsx")."""
+    return re.sub(r"^[0-9a-f]{12}_","",value or "")
+@app.template_filter("tel")
+def tel_href(value):
+    """tel: link for the first number in a phone cell ("+65 8000 0001 / +65 ..."), or "" if it isn't one."""
+    digits=re.sub(r"[^\d+]","",re.split(r"[;,/\n]",str(value or ""))[0])
+    return "tel:"+digits if len(re.sub(r"\D","",digits))>=6 else ""
+@app.template_filter("first_email")
+def first_email(value):
+    """The first email address in a cell, or ""."""
+    m=re.search(r"[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+",str(value or ""))
+    return m.group(0) if m else ""
 def arg_int(name):
     """Non-negative integer query parameter; 0 when missing or invalid."""
     try: return max(0,int(request.args.get(name) or 0))
@@ -296,7 +311,7 @@ def search():
             where+=" AND ("+" OR ".join(col+" LIKE ? COLLATE NOCASE" for col in cols)+")"
             params+=["%"+term+"%"]*len(cols)
         # One result per company; a term must match the company or one of its contacts.
-        sql=f"""SELECT co.id,co.agent_id,co.company_name,co.network,co.city,co.state,cn.name country,COUNT(ct.id) matched,MIN(ct.id) preview_id,
+        sql=f"""SELECT co.id,co.agent_id,co.source_data,co.company_name,co.network,co.city,co.state,cn.name country,COUNT(ct.id) matched,MIN(ct.id) preview_id,
             (SELECT COUNT(*) FROM contacts c2 WHERE c2.company_id=co.id) contacts
             FROM companies co JOIN countries cn ON cn.id=co.country_id LEFT JOIN contacts ct ON ct.company_id=co.id WHERE {where} GROUP BY co.id"""
         with db() as c:
@@ -305,10 +320,21 @@ def search():
             # An exact Agent ID match (e.g. SGP001) comes before partial ones (SGP0010, SGP0011...).
             exact=f"co.agent_id COLLATE NOCASE IN ({','.join('?'*len(terms))}) DESC," if terms else ""
             rows=c.execute(sql+f" ORDER BY {exact}cn.name,co.company_name COLLATE NOCASE LIMIT ? OFFSET ?",params+terms+[PAGE_SIZE,(page-1)*PAGE_SIZE]).fetchall()
+            rows=[{**dict(r),"status":agent_status(r["source_data"]),"code":country_code(r["country"])} for r in rows]
             ids=[r["preview_id"] for r in rows if r["preview_id"]]
-            if ids: previews={r["id"]:r for r in c.execute(f"SELECT id,name,job_position,email,phone FROM contacts WHERE id IN ({','.join('?'*len(ids))})",ids)}
+            if ids: previews={r["id"]:r for r in c.execute(f"SELECT id,name,job_position,email,phone,landline_no FROM contacts WHERE id IN ({','.join('?'*len(ids))})",ids)}
     start=(page-1)*PAGE_SIZE+1 if total else 0
-    return render_template("search.html",rows=rows,previews=previews,q=q,country=country,countries=country_options(user),terms_cut=len(q.split())>len(terms),fields=fields,field_labels=FIELD_LABELS,
+    tiles=[]; attention=None
+    if not q and not country:
+        # Start page: the countries this user can browse, with how many companies each holds.
+        clause,params=access_sql(user)
+        with db() as c:
+            tiles=[{"name":r["name"],"code":country_code(r["name"]),"companies":r["n"]} for r in c.execute(
+                f"SELECT cn.name,COUNT(co.id) n FROM companies co JOIN countries cn ON cn.id=co.country_id WHERE {clause} GROUP BY cn.id ORDER BY cn.name",params)]
+            if user["role"]=="ADMIN":
+                try: attention=dashboard.attention(c)["total"]
+                except Exception: logging.exception("Attention count failed")
+    return render_template("search.html",rows=rows,previews=previews,q=q,country=country,countries=country_options(user),tiles=tiles,attention=attention,terms_cut=len(q.split())>len(terms),fields=fields,field_labels=FIELD_LABELS,
                            total=total,page=page,pages=pages,page_links=page_links(page,pages),start=start,end=start+len(rows)-1 if rows else 0)
 @app.route("/company/<int:company_id>")
 @login_required
@@ -323,7 +349,9 @@ def company(company_id):
     detail=build_company_detail(co,contacts,lambda key: full or key not in SALES_FIELDS or key in fields)
     ref=request.referrer or ""
     back=ref if ref.startswith(request.host_url.rstrip("/")+url_for("search")) else url_for("search")
-    return render_template("company.html",company=co,contacts=contacts,fields=fields,field_labels=FIELD_LABELS,detail=detail,back_url=back)
+    return render_template("company.html",company=co,contacts=contacts,fields=fields,field_labels=FIELD_LABELS,detail=detail,back_url=back,
+                           status=agent_status(co["source_data"]),code=country_code(co["country"]),
+                           source_name=source_name(co["source_file"]),sales_labels=SALES_FIELDS)
 @app.errorhandler(403)
 def forbidden(e): return render_template("error.html",message="You do not have permission to access this page."),403
 @app.errorhandler(404)
@@ -437,8 +465,10 @@ def user_edit(uid):
             c.execute("DELETE FROM user_country_access WHERE user_id=?",(uid,)); c.execute("DELETE FROM user_company_access WHERE user_id=?",(uid,))
             known={r["id"] for r in c.execute("SELECT id FROM countries")}
             # "All companies" for a country also grants the country itself.
+            ticked={int(x) for x in request.form.getlist("countries") if x.isdigit() and int(x) in known}
             whole={int(x) for x in request.form.getlist("all_companies") if x.isdigit() and int(x) in known}
-            countries=sorted({int(x) for x in request.form.getlist("countries") if x.isdigit() and int(x) in known}|whole)
+            whole|={x for x in ticked if request.form.get(f"scope-{x}")=="all"}
+            countries=sorted(ticked|whole)
             companies=[int(x) for x in request.form.getlist("companies") if x.isdigit()]
             for x in countries: c.execute("INSERT OR IGNORE INTO user_country_access(user_id,country_id,all_companies) VALUES(?,?,?)",(uid,x,int(x in whole)))
             # Only store companies belonging to selected countries; query validation prevents bypass.
@@ -578,10 +608,8 @@ def import_discard():
 @app.route("/admin/database")
 @admin_required
 def database_status():
-    with db() as c:
-        countries=c.execute("SELECT cn.name,COUNT(DISTINCT co.id) companies,COUNT(ct.id) contacts,MAX(co.updated_at) updated FROM countries cn LEFT JOIN companies co ON co.country_id=cn.id LEFT JOIN contacts ct ON ct.company_id=co.id GROUP BY cn.id ORDER BY cn.name").fetchall()
-        last=c.execute("SELECT * FROM imports ORDER BY id DESC LIMIT 1").fetchone()
-    return render_template("admin/database.html",countries=countries,size=DB.stat().st_size if DB.exists() else 0,last=last)
+    # The database summary now heads the Records page; old links land there.
+    return redirect(url_for("admin_records"))
 RECORDS_PAGE=50
 @app.route("/admin/records")
 @admin_required
@@ -596,8 +624,11 @@ def admin_records():
         rows=c.execute(f"""SELECT co.id,co.agent_id,co.company_name,cn.name country,co.network,co.source_file,co.source_row,co.updated_at,
             (SELECT COUNT(*) FROM contacts ct WHERE ct.company_id=co.id) contacts {base}
             ORDER BY cn.name,co.company_name COLLATE NOCASE LIMIT ? OFFSET ?""",params+[RECORDS_PAGE,(page-1)*RECORDS_PAGE]).fetchall()
+        summary={"companies":c.execute("SELECT COUNT(*) FROM companies").fetchone()[0],"contacts":c.execute("SELECT COUNT(*) FROM contacts").fetchone()[0],
+                 "countries":c.execute("SELECT COUNT(*) FROM countries").fetchone()[0],"last":c.execute("SELECT imported_at FROM imports WHERE status='COMPLETED' ORDER BY id DESC LIMIT 1").fetchone()}
+    summary["size"]=DB.stat().st_size if DB.exists() else 0
     start=(page-1)*RECORDS_PAGE+1 if total else 0
-    return render_template("admin/records.html",rows=rows,q=q,country=country,countries=[r["name"] for r in get_countries()],
+    return render_template("admin/records.html",rows=rows,q=q,country=country,countries=[r["name"] for r in get_countries()],summary=summary,
                            total=total,page=page,pages=pages,page_links=page_links(page,pages),start=start,end=start+len(rows)-1 if rows else 0)
 # Auto-deploy: GitHub calls /deploy on each push; the route pulls the new code and touches the WSGI
 # file so PythonAnywhere reloads. Disabled (404) unless DEPLOY_SECRET is set.

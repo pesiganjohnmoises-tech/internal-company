@@ -5,7 +5,7 @@
   <div>
     <div class="eyebrow">ADMINISTRATION / DATABASE</div>
     <h1>Company records</h1>
-    <p class="muted">Administrative inspection, including source metadata.</p>
+    <p class="muted">{{summary.companies}} companies · {{summary.contacts}} contacts · {{summary.countries}} countries · database {{(summary.size/1024)|round|int}} KB · last import {{summary.last.imported_at|when if summary.last else 'never'}}</p>
   </div>
 </div>
 {{ admin_nav('admin_records') }}
@@ -25,18 +25,18 @@
   <p class="muted table-summary">{% if total %}Showing <strong>{{start}}–{{end}}</strong> of <strong>{{total}}</strong> companies{% else %}No companies match these filters.{% endif %}</p>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Company</th><th>Agent ID</th><th>Country</th><th>Network</th><th>Contacts</th><th>Source file</th><th>Row</th><th>Updated</th></tr></thead>
+      <thead><tr><th>Company</th><th>Agent ID</th><th>Country</th><th>Network</th><th>Contacts</th><th class="col-optional">Source file</th><th class="col-optional">Row</th><th class="col-optional">Updated</th></tr></thead>
       <tbody>
         {% for r in rows %}
         <tr>
           <td><a class="table-link" href="{{url_for('company',company_id=r.id)}}">{{r.company_name}}</a></td>
-          <td>{{r.agent_id or '—'}}</td>
+          <td>{% if r.agent_id %}<span class="ref">{{r.agent_id}}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
           <td>{{r.country}}</td>
           <td>{{r.network or '—'}}</td>
           <td>{{r.contacts}}</td>
-          <td>{{r.source_file or '—'}}</td>
-          <td>{{r.source_row or '—'}}</td>
-          <td>{{r.updated_at|when}}</td>
+          <td class="col-optional nowrap">{{r.source_file|source_name or '—'}}</td>
+          <td class="col-optional">{{r.source_row or '—'}}</td>
+          <td class="col-optional nowrap">{{r.updated_at|when}}</td>
         </tr>
         {% else %}
         <tr><td colspan="8" class="table-empty">No records found.</td></tr>

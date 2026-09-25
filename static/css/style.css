@@ -75,7 +75,7 @@ mark{background:#fdeeb5;color:inherit;border-radius:2px;padding:0 1px}
 .admin-head h1,.user-head h1{font:700 clamp(22px,2.4vw,28px)/1.2 var(--font-head);letter-spacing:-.02em;margin:4px 0 4px;overflow-wrap:anywhere}
 .results-title{font:700 clamp(19px,2.2vw,24px)/1.25 var(--font-head);letter-spacing:-.015em;margin:0 0 2px;overflow-wrap:anywhere}
 .panel-title,.admin-panel h2,.section-head h2,.card-head h2,.panel-head h2{display:flex;align-items:center;gap:8px;font:700 16px/1.3 var(--font-head);letter-spacing:-.1px;margin:0}
-.inline-h2{display:inline-flex}
+.inline-h2,.admin-panel .inline-h2{display:inline-flex}
 .muted{color:var(--muted)}
 .tiny,.hint{font-size:12px;color:var(--faint)}
 .warn-text{color:var(--warn);font-weight:600}

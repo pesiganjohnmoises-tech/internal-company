@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Company Directory — Project Presentation</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap">
+<style>
+/* Editable source for Company_Directory_Project_Presentation.pdf.
+   Print with Chrome: 16:9 slides (13.333in x 7.5in), one <section class="slide"> per page. */
+@page{size:13.333in 7.5in;margin:0}
+:root{--ink:#14222d;--ink2:#3a4b57;--muted:#667784;--faint:#98a6af;--line:#dfe5e9;--line2:#edf1f3;--bg:#f3f5f7;
+  --brand:#087f78;--brand2:#066b65;--brand50:#ebf6f4;--brand100:#cfe8e4;--good:#16774a;--goodbg:#e5f4eb;--warn:#915708;--warnbg:#fcf1df;--bad:#b0372a;--badbg:#fcebe8}
+*{box-sizing:border-box}
+html,body{margin:0;background:#8a959c}
+body{font:15px/1.45 "DM Sans",system-ui,sans-serif;color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact;counter-reset:slide}
+.slide{position:relative;width:13.333in;height:7.5in;margin:0 auto 16px;background:#fff;overflow:hidden;padding:.55in .7in .6in;page-break-after:always;break-after:page;counter-increment:slide;display:flex;flex-direction:column}
+@media print{html,body{background:#fff}.slide{margin:0}}
+h1,h2,h3,p{margin:0}
+.kicker{font:700 11.5px "DM Sans";letter-spacing:1.6px;text-transform:uppercase;color:var(--brand)}
+.title{font:800 34px/1.12 Manrope,sans-serif;letter-spacing:-.8px;margin:6px 0 6px}
+.lead{font-size:17px;color:var(--ink2);max-width:9.5in}
+.body{flex:1;display:flex;flex-direction:column;justify-content:flex-start;min-height:0;margin-top:26px}
+.foot{position:absolute;left:.7in;right:.7in;bottom:.28in;display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint);border-top:1px solid var(--line2);padding-top:7px}
+.foot::after{content:counter(slide)}
+.muted{color:var(--muted)}.small{font-size:13px}.tiny{font-size:11.5px;color:var(--muted)}
+b,strong{font-weight:700}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.card{border:1px solid var(--line);border-radius:10px;padding:16px 18px;background:#fff}
+.card h3{font:700 16px Manrope,sans-serif;margin:0 0 6px;display:flex;align-items:center;gap:9px}
+.card p,.card li{font-size:13.5px;color:var(--ink2)}
+.card ul{margin:6px 0 0;padding-left:18px}.card li{margin:3px 0}
+.tint{background:var(--brand50);border-color:var(--brand100)}
+.ico{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:7px;background:var(--brand50);color:var(--brand);flex-shrink:0}
+.ico svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.stat{border-left:3px solid var(--brand);padding:4px 0 4px 14px}
+.stat strong{display:block;font:800 36px/1.05 Manrope,sans-serif;color:var(--ink)}
+.stat span{font-size:13px;color:var(--muted)}
+.tag{display:inline-block;font:600 11.5px "DM Sans";padding:2px 8px;border-radius:4px;background:#edf1f3;color:#52636f}
+.tag.good{background:var(--goodbg);color:var(--good)}.tag.warn{background:var(--warnbg);color:var(--warn)}.tag.bad{background:var(--badbg);color:var(--bad)}.tag.brand{background:var(--brand50);color:var(--brand)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font:700 11px "DM Sans";letter-spacing:.6px;text-transform:uppercase;color:var(--muted);background:#f8fafb;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:8px 10px;border-bottom:1px solid var(--line2);vertical-align:top;color:var(--ink2)}
+td strong{color:var(--ink)}
+.shot{border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 10px 28px rgba(20,34,45,.12);background:#f3f5f7}
+.shot img{display:block;width:100%;object-fit:cover;object-position:top}
+.screen{display:grid;grid-template-columns:8.1in 1fr;gap:26px;align-items:start}
+.screen .shot img{height:4.75in}
+.notes{display:grid;gap:13px;padding:0;margin:4px 0 0;font-size:14px;color:var(--ink2)}
+.caption{font-size:12px;color:var(--muted);margin-top:8px}
+.flow{display:flex;align-items:stretch;gap:0}
+.flow .step{flex:1;border:1px solid var(--line);border-radius:10px;padding:14px 14px;background:#fff;position:relative}
+.flow .step h3{font:700 14.5px Manrope,sans-serif;margin:4px 0 4px}
+.flow .step p{font-size:12.5px;color:var(--ink2)}
+.flow .arrow{display:grid;place-items:center;width:34px;color:var(--brand);font:700 20px Manrope}
+.num{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--brand);color:#fff;font:700 11.5px Manrope}
+.divider{background:var(--brand);color:#fff;justify-content:center}
+.divider .kicker{color:#bfe6e0}
+.divider .title{color:#fff;font-size:44px}
+.divider .lead{color:#d9f0ec}
+.divider .foot{color:#9fd3cb;border-color:#1f928b}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.pill-list{display:flex;flex-wrap:wrap;gap:6px}
+.col-note{border-left:3px solid var(--line);padding-left:12px}
+.check li{list-style:none;position:relative;padding-left:22px}
+.check li::before{content:"";position:absolute;left:2px;top:.45em;width:9px;height:5px;border-left:2px solid var(--good);border-bottom:2px solid var(--good);transform:rotate(-45deg)}
+.dot li{list-style:none;position:relative;padding-left:18px}
+.dot li::before{content:"";position:absolute;left:3px;top:.55em;width:7px;height:7px;border-radius:50%;background:var(--warn)}
+.phone{width:2.1in;border:6px solid #1c2a33;border-radius:22px;overflow:hidden;box-shadow:0 12px 28px rgba(20,34,45,.2)}
+.phone img{display:block;width:100%}
+.timeline{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.timeline .t{border-top:3px solid var(--brand);padding-top:10px}
+.timeline .t .when{font:700 11px "DM Sans";letter-spacing:1px;text-transform:uppercase;color:var(--brand)}
+.timeline .t h3{font:700 15px Manrope;margin:3px 0 4px}
+.timeline .t li{font-size:12.5px;color:var(--ink2);margin:2px 0}
+.timeline .t ul{padding-left:16px;margin:0}
+</style>
+</head>
+<body>
+
+<!-- 1 Cover -->
+<section class="slide" style="padding:0;display:grid;grid-template-columns:1.05fr 1fr">
+  <div style="background:var(--brand);color:#fff;padding:.8in .7in;display:flex;flex-direction:column;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:12px">
+      <svg width="46" height="46" viewBox="0 0 40 40"><rect width="40" height="40" rx="11" fill="#fff"/><path d="M13 17.5 20 14l7 3.5M13 17.5 20 26l7-8.5" fill="none" stroke="#7fd3c9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="20" cy="12.5" r="4" fill="#087f78"/><circle cx="11.5" cy="18" r="3.2" fill="#4fb3a9"/><circle cx="28.5" cy="18" r="3.2" fill="#4fb3a9"/><path d="M13.5 31a6.5 6.5 0 0 1 13 0" fill="none" stroke="#087f78" stroke-width="2.6" stroke-linecap="round"/></svg>
+      <div style="line-height:1.15"><div style="font:700 18px Manrope">Company Directory</div><div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#bfe6e0">Internal</div></div>
+    </div>
+    <div>
+      <div class="kicker" style="color:#bfe6e0">Project presentation</div>
+      <h1 style="font:800 52px/1.05 Manrope;letter-spacing:-1.5px;margin:12px 0 16px">Company Directory</h1>
+      <p style="font-size:19px;color:#d9f0ec;max-width:5in">A secure, searchable directory of our partner agents and their contacts — with controlled access for staff and simple tools for the administrator.</p>
+    </div>
+    <div style="font-size:13px;color:#bfe6e0">Prepared by John Moises Pesigan · September 2026</div>
+  </div>
+  <div style="background:var(--bg);display:flex;align-items:center;justify-content:center;padding:.5in">
+    <div class="shot" style="width:100%"><img src="screens/home.png" alt="Company Directory start page"></div>
+  </div>
+</section>
+
+<!-- 2 Agenda -->
+<section class="slide">
+  <div class="kicker">Contents</div><h2 class="title">What this presentation covers</h2>
+  <div class="body">
+    <div class="grid3" style="gap:16px">
+      <div class="card"><h3><span class="num">1</span>Overview &amp; problem</h3><p>What the system is, who uses it, and why it exists.</p></div>
+      <div class="card"><h3><span class="num">2</span>Solution &amp; features</h3><p>What it does for staff and for the administrator.</p></div>
+      <div class="card"><h3><span class="num">3</span>Screens</h3><p>Real screenshots of the running application.</p></div>
+      <div class="card"><h3><span class="num">4</span>How it works</h3><p>User journeys, architecture, data and security.</p></div>
+      <div class="card"><h3><span class="num">5</span>Progress &amp; status</h3><p>What has been built, and where it stands today.</p></div>
+      <div class="card"><h3><span class="num">6</span>Next steps</h3><p>Roadmap options, business impact and summary.</p></div>
+    </div>
+    <p class="tiny" style="margin-top:26px">All figures come from the project itself: source code, a database snapshot of 25 Sep 2026, the version history and the live site. Items that could not be checked are marked <span class="tag">Not verified</span>.</p>
+  </div>
+  <div class="foot">Company Directory · Project presentation</div>
+</section>
+
+<!-- 3 Executive overview -->
+<section class="slide">
+  <div class="kicker">1 · Executive overview</div><h2 class="title">One place to find the right agent — and the right person to contact</h2>
+  <div class="body">
+    <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:28px">
+      <div class="grid2" style="gap:14px">
+        <div class="card"><h3>What it is</h3><p>An internal web application that holds our overseas partner agents (freight forwarders) by country, with their contacts, network memberships, status and assigned sales reps.</p></div>
+        <div class="card"><h3>Who uses it</h3><p>Staff who need to find and contact agents. Each account sees only the countries, companies and sales columns granted to it.</p></div>
+        <div class="card"><h3>Who manages it</h3><p>An administrator, who loads country workbooks from Excel, manages user accounts and access, and monitors data quality.</p></div>
+        <div class="card"><h3>Status</h3><p><span class="tag good">Live</span> Running on PythonAnywhere with automatic deployment from GitHub.</p></div>
+      </div>
+      <div class="card tint" style="display:flex;flex-direction:column;justify-content:center;gap:18px">
+        <div class="stat"><strong>137</strong><span>agent companies · 474 contacts</span></div>
+        <div class="stat"><strong>4</strong><span>countries — India (107 companies, real data); Singapore, Thailand, USA (10 sample records each)</span></div>
+        <div class="stat"><strong>8</strong><span>user accounts · 3 access levels</span></div>
+        <p class="tiny">Database snapshot, 25 Sep 2026. The live database may differ.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Executive overview</div>
+</section>
+
+<!-- 4 Business problem -->
+<section class="slide">
+  <div class="kicker">2 · Business problem</div><h2 class="title">Agent information lived in spreadsheets</h2>
+  <p class="lead">The system imports one Excel workbook per country. The problems below are the ones its features are built to solve.</p>
+  <div class="body">
+    <div class="grid3">
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>Scattered by country</h3><p>Each country's agents sit in a separate workbook, so finding "an agent in Chennai on WCA" means opening and searching several files.</p></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>All-or-nothing sharing</h3><p>A shared workbook exposes every column to everyone — including which rep from which of our brands handles each agent.</p></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Manual status checks</h3><p>Expired network memberships, pending KYC and inactive agents must be spotted by reading dates and statuses row by row.</p></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/><circle cx="18" cy="16" r="3"/></svg></span>Uneven data quality</h3><p>Missing emails and phones, shared addresses and unreadable dates are hard to see across hundreds of rows.</p></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><path d="M12 4v10m0 0-4-4m4 4 4-4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg></span>Risky updates</h3><p>Replacing a country's data by hand can silently drop or duplicate companies, with no record of who changed what.</p></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>Slow to reach people</h3><p>Once the agent is found, the right contact's email or phone still has to be located and copied from another sheet or cell.</p></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Business problem</div>
+</section>
+
+<!-- 5 Solution flow -->
+<section class="slide">
+  <div class="kicker">3 · Solution</div><h2 class="title">From spreadsheets to a controlled, searchable directory</h2>
+  <div class="body">
+    <div class="flow">
+      <div class="step"><span class="tag">Before</span><h3>Country workbooks</h3><p>Excel files per country, shared as whole files, checked by hand.</p></div>
+      <div class="arrow">→</div>
+      <div class="step tint"><span class="tag brand">Import</span><h3>Preview, back up, load</h3><p>The administrator loads a workbook; the system shows what will change and backs up the database first.</p></div>
+      <div class="arrow">→</div>
+      <div class="step tint"><span class="tag brand">Current system</span><h3>One secure directory</h3><p>Search across countries, see status at a glance, open a company and contact the right person.</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="tag good">Benefit</span><h3>Faster, safer access</h3><p>Less searching, access limited to what each person needs, problems surfaced automatically.</p></div>
+    </div>
+    <div class="grid3" style="margin-top:26px">
+      <div class="col-note"><strong>Excel stays the source.</strong> <span class="muted small">Teams keep maintaining workbooks; every column is kept, including new ones, with no code change.</span></div>
+      <div class="col-note"><strong>Access is enforced by the server.</strong> <span class="muted small">Restricted users never receive data outside their grants — not just hidden on screen.</span></div>
+      <div class="col-note"><strong>Problems come to the administrator.</strong> <span class="muted small">Expiring networks, pending KYC and data gaps are listed on the overview.</span></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Solution</div>
+</section>
+
+<!-- 6 Features: directory -->
+<section class="slide">
+  <div class="kicker">4 · Key features</div><h2 class="title">For everyone: find and reach agents quickly</h2>
+  <div class="body">
+    <table>
+      <thead><tr><th style="width:22%">Feature</th><th style="width:42%">What it does</th><th style="width:13%">Who</th><th>Business benefit</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Directory search</strong></td><td>One box searches agent name, agent ID, city, state, country, network and contact name, role, email and phone. Exact agent-ID matches come first.</td><td>All users</td><td>Answers "who can we use in…?" in seconds.</td></tr>
+        <tr><td><strong>Country filter &amp; browsing</strong></td><td>Narrow any search to a country, or browse a country's agents from the start page.</td><td>All users</td><td>Fast lane-by-lane lookup.</td></tr>
+        <tr><td><strong>Status at a glance</strong></td><td>Agent status, KYC and network expiry shown on every result and company page, e.g. <span class="tag good">Active</span> <span class="tag warn">KYC Pending</span>.</td><td>All users</td><td>Avoids working with agents that are inactive or out of network.</td></tr>
+        <tr><td><strong>Company profile</strong></td><td>Key facts, contacts table with one-click copy and tap-to-call, and every workbook column grouped into sections.</td><td>All users</td><td>Everything about an agent on one page.</td></tr>
+        <tr><td><strong>Recently viewed</strong></td><td>Start page lists the agents a person opened recently (kept in their own browser).</td><td>All users</td><td>Quick return to ongoing work.</td></tr>
+        <tr><td><strong>Self-service password</strong></td><td>Users change their own password; other devices are signed out.</td><td>All users</td><td>Fewer requests to the administrator.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="foot">Company Directory · Key features</div>
+</section>
+
+<!-- 7 Features: admin -->
+<section class="slide">
+  <div class="kicker">4 · Key features</div><h2 class="title">For the administrator: control, safety and oversight</h2>
+  <div class="body">
+    <div class="grid2" style="gap:16px 22px">
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.2a6.5 6.5 0 0 1 3 5.8"/></svg></span>Users &amp; access</h3>
+        <ul><li>Three levels: <strong>User</strong>, <strong>Full Access</strong>, <strong>Admin</strong></li><li>Per-country access with <strong>"All companies, including future imports"</strong> or hand-picked companies</li><li>Per-user visibility of the four brand sales columns</li><li>Users list shows last sign-in and how many companies each person can see</li></ul></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg></span>Safe Excel imports</h3>
+        <ul><li><strong>Preview</strong> before anything changes: new, removed and updated companies, skipped rows</li><li>Automatic <strong>database backup</strong> before every import (newest 10 kept)</li><li>Company IDs and user access survive re-imports</li><li>Failed imports roll back and are recorded</li></ul></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span>Overview dashboard</h3>
+        <ul><li><strong>Needs attention:</strong> expired / expiring networks, KYC pending, inactive agents, unreadable dates</li><li>Contact data quality, sales-rep coverage per brand, access overview</li><li>Import health and recent admin activity</li></ul></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r=".8"/><circle cx="4.5" cy="12" r=".8"/><circle cx="4.5" cy="18" r=".8"/></svg></span>Records &amp; exports</h3>
+        <ul><li>Records page: every company with source file and row, filters and paging</li><li>CSV export of companies (all workbook columns) and contacts, safe to open in Excel</li></ul></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Key features</div>
+</section>
+
+<!-- 8 Divider: screens -->
+<section class="slide divider">
+  <div class="kicker">5 · UI / UX showcase</div>
+  <h2 class="title">The application</h2>
+  <p class="lead">Real screenshots of the current version. To protect partner contact details, the directory screens show the sample records (Singapore, Thailand, USA) included with the project.</p>
+  <div class="foot">Company Directory · UI / UX showcase</div>
+</section>
+
+<!-- 9 Login + start -->
+<section class="slide">
+  <div class="kicker">5 · Screens</div><h2 class="title">Sign in and start page</h2>
+  <div class="body">
+    <div style="display:grid;grid-template-columns:1fr 1.75fr;gap:26px;align-items:start">
+      <div><div class="shot"><img src="screens/login.png" alt="Sign-in page" style="height:4.1in;object-position:center"></div>
+        <p class="caption"><strong>Sign in.</strong> Personal accounts only; repeated wrong passwords are blocked for 15 minutes.</p></div>
+      <div><div class="shot"><img src="screens/home.png" alt="Start page" style="height:4.1in"></div>
+        <p class="caption"><strong>Start page.</strong> Search, country tiles with agent counts (only granted countries for restricted users), recently viewed agents, and — for admins — how many agents need attention.</p></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Screens</div>
+</section>
+
+<!-- 10 Search results -->
+<section class="slide">
+  <div class="kicker">5 · Screens</div><h2 class="title">Search results: scan, check status, contact</h2>
+  <div class="body">
+    <div class="screen">
+      <div class="shot"><img src="screens/results_q.png" alt="Search results for freight"></div>
+      <div><ul class="check notes"><li><strong>One row per agent</strong> — name, agent ID, location with country code, network</li><li><strong>Status line</strong> — active, KYC and network-expiry warnings</li><li><strong>Main contact</strong> — clickable email, tap-to-call phone and copy buttons</li><li><strong>Search terms highlighted</strong>; 20 results per page</li></ul><p class="caption" style="margin-top:16px">Search for “freight”; sample records shown.</p></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Screens</div>
+</section>
+
+<!-- 11 Company page -->
+<section class="slide">
+  <div class="kicker">5 · Screens</div><h2 class="title">Company profile</h2>
+  <div class="body">
+    <div class="screen">
+      <div class="shot"><img src="screens/company.png" alt="Company profile"></div>
+      <div><ul class="check notes"><li><strong>Header facts</strong> — country, agent ID, status, location, network and the sales reps this user may see</li><li><strong>Contacts first</strong> — compact table with copy and call actions; empty columns hidden</li><li><strong>Every workbook column</strong> kept and grouped into sections below</li><li>Record number and source file shown <strong>to administrators only</strong></li></ul><p class="caption" style="margin-top:16px">Sample record from singapore.xlsx.</p></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Screens</div>
+</section>
+
+<!-- 12 Mobile -->
+<section class="slide">
+  <div class="kicker">5 · Screens</div><h2 class="title">Works on phones and tablets</h2>
+  <div class="body">
+    <div style="display:flex;gap:40px;align-items:center;justify-content:center">
+      <div style="text-align:center"><div class="phone"><img src="screens/m_home.png" alt="Start page on a phone"></div><p class="caption">Start page</p></div>
+      <div style="text-align:center"><div class="phone"><img src="screens/m_results.png" alt="Results on a phone"></div><p class="caption">Search results</p></div>
+      <div style="text-align:center"><div class="phone"><img src="screens/m_company.png" alt="Company page on a phone"></div><p class="caption">Company profile</p></div>
+      <div style="max-width:3in"><p class="small" style="color:var(--ink2)">The same application adapts to small screens: rows stack, tables become cards with labelled values, and phone numbers can be tapped to call — useful for staff away from their desk.</p></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Screens</div>
+</section>
+
+<!-- 13 Admin overview -->
+<section class="slide">
+  <div class="kicker">5 · Screens</div><h2 class="title">Administrator overview</h2>
+  <div class="body">
+    <div class="screen">
+      <div class="shot"><img src="screens/overview.png" alt="Admin overview"></div>
+      <div>
+        <p class="small" style="color:var(--ink2);margin-bottom:10px">On 25 Sep 2026 the overview listed <strong>68 items needing attention</strong>:</p>
+        <table style="font-size:13px">
+          <tr><td>Network expired</td><td><span class="tag bad">8</span></td></tr>
+          <tr><td>Expiring within 90 days</td><td><span class="tag warn">16</span></td></tr>
+          <tr><td>KYC pending</td><td><span class="tag warn">30</span></td></tr>
+          <tr><td>Inactive agents</td><td><span class="tag bad">2</span></td></tr>
+          <tr><td>Unreadable expiry date</td><td><span class="tag">12</span></td></tr>
+        </table>
+        <p class="caption">Each entry links to the company. All 30 KYC-pending entries are the sample records; the real India data accounts for the other 38.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Screens</div>
+</section>
+
+<!-- 14 Users -->
+<section class="slide">
+  <div class="kicker">5 · Screens</div><h2 class="title">User management</h2>
+  <div class="body">
+    <div class="screen">
+      <div class="shot"><img src="screens/users.png" alt="Users list"></div>
+      <div><ul class="check notes"><li><strong>Every account at a glance</strong> — role, status, last sign-in</li><li><strong>How much each person can see</strong> — e.g. “118 of 137 companies”, or a warning when an account sees nothing</li><li><strong>Filter</strong> by name, role or status</li><li>One click to create a user or edit access</li></ul></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Screens</div>
+</section>
+
+<!-- 14b Access -->
+<section class="slide">
+  <div class="kicker">5 · Screens</div><h2 class="title">Access settings per user</h2>
+  <div class="body">
+    <div class="screen">
+      <div class="shot"><img src="screens/user_access.png" alt="Access settings"></div>
+      <div><ul class="check notes"><li><strong>Sales columns</strong> — switch each brand's rep column on or off per user</li><li><strong>Countries</strong> — tick the countries a user may search</li><li><strong>“All companies, incl. future imports”</strong> — new agents appear automatically</li><li>Or <strong>“Only selected”</strong> companies, for tighter control</li></ul><p class="caption" style="margin-top:16px">This account has all 107 India companies ticked one by one; switching India to “All companies” would also cover future imports.</p></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Screens</div>
+</section>
+
+<!-- 15 Imports -->
+<section class="slide">
+  <div class="kicker">5 · Screens</div><h2 class="title">Excel imports: preview before replacing</h2>
+  <div class="body">
+    <div class="screen">
+      <div class="shot"><img src="screens/preview.png" alt="Import preview"></div>
+      <div><ul class="check notes"><li><strong>Preview first</strong> — companies after import, new, removed, contact rows</li><li>Lists the <strong>companies to be added or removed</strong> and rows that will be skipped</li><li>Names users who would <strong>miss new companies</strong></li><li><strong>Automatic backup</strong> before the change; full import history on the Imports page</li></ul><p class="caption" style="margin-top:16px">Preview of usa.xlsx in an environment where USA was not yet loaded.</p></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Screens</div>
+</section>
+
+<!-- 16 User journeys -->
+<section class="slide">
+  <div class="kicker">6 · User journeys</div><h2 class="title">How people use it</h2>
+  <div class="body" style="gap:26px">
+    <div>
+      <p style="font:700 15px Manrope;margin-bottom:10px">Staff member — find an agent for a shipment</p>
+      <div class="flow">
+        <div class="step"><span class="num">1</span><h3>Sign in</h3><p>Personal account; sees only granted countries.</p></div><div class="arrow">→</div>
+        <div class="step"><span class="num">2</span><h3>Search or browse</h3><p>"Chennai", "WCA", an agent ID — or pick a country.</p></div><div class="arrow">→</div>
+        <div class="step"><span class="num">3</span><h3>Check status</h3><p>Active? KYC complete? Network valid?</p></div><div class="arrow">→</div>
+        <div class="step"><span class="num">4</span><h3>Open profile</h3><p>Contacts, network, assigned reps.</p></div><div class="arrow">→</div>
+        <div class="step tint"><span class="num">5</span><h3>Contact</h3><p>Click to email, tap to call, or copy.</p></div>
+      </div>
+    </div>
+    <div>
+      <p style="font:700 15px Manrope;margin-bottom:10px">Administrator — update a country's data</p>
+      <div class="flow">
+        <div class="step"><span class="num">1</span><h3>Upload workbook</h3><p>Or pick one included with the project.</p></div><div class="arrow">→</div>
+        <div class="step"><span class="num">2</span><h3>Review preview</h3><p>New, removed, skipped rows; users who would miss new companies.</p></div><div class="arrow">→</div>
+        <div class="step"><span class="num">3</span><h3>Confirm</h3><p>Backup taken automatically, then the country is replaced.</p></div><div class="arrow">→</div>
+        <div class="step"><span class="num">4</span><h3>Check overview</h3><p>Needs attention, data quality, import health.</p></div><div class="arrow">→</div>
+        <div class="step tint"><span class="num">5</span><h3>Adjust access</h3><p>Only if needed — "All companies" grants update themselves.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · User journeys</div>
+</section>
+
+<!-- 17 Admin before/after -->
+<section class="slide">
+  <div class="kicker">7 · Admin experience</div><h2 class="title">What changes for the administrator</h2>
+  <div class="body">
+    <table>
+      <thead><tr><th style="width:24%">Task</th><th style="width:36%">With spreadsheets only</th><th>With Company Directory</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Share agent data</strong></td><td>Send whole files; everyone sees every column</td><td>Grant countries, companies and sales columns per person; enforced by the server</td></tr>
+        <tr><td><strong>Update a country</strong></td><td>Overwrite a file; no view of what changed</td><td>Preview the difference, automatic backup, one-click confirm, history kept</td></tr>
+        <tr><td><strong>New agents added</strong></td><td>Re-share updated files with each person</td><td>"All companies" grants include new agents automatically; preview names anyone who would miss them</td></tr>
+        <tr><td><strong>Spot problems</strong></td><td>Read dates and statuses row by row</td><td>Overview lists expired / expiring networks, KYC pending, inactive agents and data gaps</td></tr>
+        <tr><td><strong>Password resets</strong></td><td>—</td><td>Users change their own; admin can reset and it signs out old sessions</td></tr>
+        <tr><td><strong>Know who changed what</strong></td><td>No record</td><td>Admin actions, imports and sign-in failures recorded; shown on the overview</td></tr>
+      </tbody>
+    </table>
+    <p class="tiny" style="margin-top:12px">The "spreadsheets only" column describes working from the per-country workbooks the system imports; it is not a measured baseline.</p>
+  </div>
+  <div class="foot">Company Directory · Admin experience</div>
+</section>
+
+<!-- 18 Architecture -->
+<section class="slide">
+  <div class="kicker">8 · Technical architecture</div><h2 class="title">A simple, low-maintenance setup</h2>
+  <div class="body">
+    <div style="display:grid;grid-template-columns:1.25fr 1fr;gap:30px;align-items:center">
+      <svg viewBox="0 0 620 360" style="width:100%" font-family="DM Sans, sans-serif">
+        <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#087f78"/></marker></defs>
+        <rect x="10" y="20" width="170" height="64" rx="10" fill="#fff" stroke="#dfe5e9"/><text x="95" y="48" text-anchor="middle" font-weight="700" font-size="15" fill="#14222d">Staff browser</text><text x="95" y="68" text-anchor="middle" font-size="12" fill="#667784">desktop · tablet · phone</text>
+        <line x1="180" y1="52" x2="245" y2="52" stroke="#087f78" stroke-width="2" marker-end="url(#a)"/><text x="212" y="42" text-anchor="middle" font-size="11" fill="#667784">HTTPS</text>
+        <rect x="250" y="8" width="360" height="250" rx="12" fill="#ebf6f4" stroke="#cfe8e4"/><text x="266" y="32" font-weight="700" font-size="13" fill="#087f78">PythonAnywhere (hosting)</text>
+        <rect x="270" y="44" width="320" height="96" rx="10" fill="#fff" stroke="#cfe8e4"/><text x="430" y="68" text-anchor="middle" font-weight="700" font-size="15" fill="#14222d">Web application (Python · Flask)</text>
+        <text x="430" y="90" text-anchor="middle" font-size="12" fill="#3a4b57">pages · search · access rules · sign-in</text><text x="430" y="108" text-anchor="middle" font-size="12" fill="#3a4b57">Excel importer · admin tools · CSV export</text><text x="430" y="126" text-anchor="middle" font-size="12" fill="#3a4b57">deploy endpoint (signed GitHub webhook)</text>
+        <line x1="360" y1="140" x2="360" y2="170" stroke="#087f78" stroke-width="2" marker-end="url(#a)"/><line x1="500" y1="140" x2="500" y2="170" stroke="#087f78" stroke-width="2" marker-end="url(#a)"/>
+        <rect x="270" y="174" width="170" height="70" rx="10" fill="#fff" stroke="#cfe8e4"/><text x="355" y="202" text-anchor="middle" font-weight="700" font-size="14" fill="#14222d">SQLite database</text><text x="355" y="222" text-anchor="middle" font-size="12" fill="#667784">one file · automatic backups</text>
+        <rect x="450" y="174" width="140" height="70" rx="10" fill="#fff" stroke="#cfe8e4"/><text x="520" y="202" text-anchor="middle" font-weight="700" font-size="14" fill="#14222d">Activity log</text><text x="520" y="222" text-anchor="middle" font-size="12" fill="#667784">rotating file</text>
+        <rect x="10" y="190" width="170" height="64" rx="10" fill="#fff" stroke="#dfe5e9"/><text x="95" y="218" text-anchor="middle" font-weight="700" font-size="15" fill="#14222d">Excel workbooks</text><text x="95" y="238" text-anchor="middle" font-size="12" fill="#667784">one per country</text>
+        <line x1="180" y1="222" x2="265" y2="120" stroke="#087f78" stroke-width="2" marker-end="url(#a)"/><text x="150" y="150" font-size="11" fill="#667784">admin upload</text>
+        <rect x="10" y="290" width="170" height="56" rx="10" fill="#fff" stroke="#dfe5e9"/><text x="95" y="314" text-anchor="middle" font-weight="700" font-size="14" fill="#14222d">Developer laptop</text><text x="95" y="332" text-anchor="middle" font-size="12" fill="#667784">code changes</text>
+        <line x1="180" y1="318" x2="245" y2="318" stroke="#087f78" stroke-width="2" marker-end="url(#a)"/>
+        <rect x="250" y="290" width="150" height="56" rx="10" fill="#fff" stroke="#dfe5e9"/><text x="325" y="314" text-anchor="middle" font-weight="700" font-size="14" fill="#14222d">GitHub</text><text x="325" y="332" text-anchor="middle" font-size="12" fill="#667784">version control</text>
+        <path d="M400 318 H610 V250" fill="none" stroke="#087f78" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#a)"/><text x="505" y="310" text-anchor="middle" font-size="11" fill="#667784">push → auto-deploy</text>
+      </svg>
+      <table style="font-size:12.5px">
+        <thead><tr><th>Layer</th><th>Technology (verified)</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Screens</strong></td><td>Server-rendered HTML (Jinja2 templates), one stylesheet, small vanilla JavaScript; Google Fonts</td></tr>
+          <tr><td><strong>Application</strong></td><td>Python 3 · Flask 3 · Flask-WTF (form protection) · Werkzeug (password hashing)</td></tr>
+          <tr><td><strong>Excel</strong></td><td>openpyxl — reads .xlsx workbooks</td></tr>
+          <tr><td><strong>Data</strong></td><td>SQLite database (single file)</td></tr>
+          <tr><td><strong>Hosting</strong></td><td>PythonAnywhere <span class="tiny">(plan tier: Not verified)</span></td></tr>
+          <tr><td><strong>Delivery</strong></td><td>Git + GitHub; signed webhook pulls and reloads on every push to main</td></tr>
+          <tr><td><strong>Quality</strong></td><td>Automated test script — 209 checks</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Technical architecture</div>
+</section>
+
+<!-- 19 Data model -->
+<section class="slide">
+  <div class="kicker">9 · Data structure</div><h2 class="title">How the information is organised</h2>
+  <div class="body">
+    <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:30px;align-items:center">
+      <svg viewBox="0 0 700 330" style="width:100%" font-family="DM Sans, sans-serif">
+        <g font-size="12" fill="#3a4b57">
+        <rect x="20" y="30" width="150" height="70" rx="10" fill="#ebf6f4" stroke="#cfe8e4"/><text x="95" y="58" text-anchor="middle" font-weight="700" font-size="15" fill="#14222d">Country</text><text x="95" y="78" text-anchor="middle">4 today</text>
+        <rect x="245" y="30" width="170" height="70" rx="10" fill="#ebf6f4" stroke="#cfe8e4"/><text x="330" y="58" text-anchor="middle" font-weight="700" font-size="15" fill="#14222d">Agent company</text><text x="330" y="78" text-anchor="middle">137 · agent ID, network, status</text>
+        <rect x="490" y="30" width="130" height="70" rx="10" fill="#ebf6f4" stroke="#cfe8e4"/><text x="555" y="58" text-anchor="middle" font-weight="700" font-size="15" fill="#14222d">Contact</text><text x="555" y="78" text-anchor="middle">474</text>
+        <line x1="170" y1="65" x2="245" y2="65" stroke="#087f78" stroke-width="2"/><text x="207" y="57" text-anchor="middle">has many</text>
+        <line x1="415" y1="65" x2="490" y2="65" stroke="#087f78" stroke-width="2"/><text x="452" y="57" text-anchor="middle">has many</text>
+        <rect x="245" y="220" width="170" height="70" rx="10" fill="#fff" stroke="#dfe5e9"/><text x="330" y="248" text-anchor="middle" font-weight="700" font-size="15" fill="#14222d">User account</text><text x="330" y="268" text-anchor="middle">8 · User / Full Access / Admin</text>
+        <path d="M280 220 C 200 180, 120 150, 95 100" fill="none" stroke="#98a6af" stroke-width="1.6" stroke-dasharray="5 4"/><text x="20" y="200">country access</text><text x="20" y="216">(all or selected companies)</text>
+        <line x1="330" y1="220" x2="330" y2="100" stroke="#98a6af" stroke-width="1.6" stroke-dasharray="5 4"/><text x="338" y="165">company access</text>
+        <path d="M415 250 C 480 250, 540 230, 555 100" fill="none" stroke="#98a6af" stroke-width="1.6" stroke-dasharray="5 4"/><text x="572" y="160">sales-column</text><text x="572" y="176">visibility</text>
+        <rect x="490" y="250" width="130" height="50" rx="10" fill="#fff" stroke="#dfe5e9"/><text x="555" y="272" text-anchor="middle" font-weight="700" font-size="14" fill="#14222d">Import history</text><text x="555" y="290" text-anchor="middle">every import</text>
+        </g>
+      </svg>
+      <div style="display:grid;gap:12px">
+        <div class="card"><h3>Every Excel column is kept</h3><p>Besides the main fields, each company and contact stores its full original row, so new workbook columns appear on the profile without programming.</p></div>
+        <div class="card"><h3>Access lives with the data</h3><p>Grants link user accounts to countries and companies; the database answers only with rows a user may see.</p></div>
+        <p class="tiny">Passwords are stored only as one-way hashes. No credentials or keys are shown in this document.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Data structure</div>
+</section>
+
+<!-- 20 Security -->
+<section class="slide">
+  <div class="kicker">10 · Security</div><h2 class="title">Security: in place today, and recommended next</h2>
+  <div class="body">
+    <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:22px">
+      <div class="card"><h3><span class="tag good">Implemented</span></h3>
+        <div class="grid2" style="gap:0 18px">
+          <ul class="check" style="padding:0;margin:4px 0 0">
+            <li>Personal accounts; passwords stored as strong one-way hashes (scrypt); minimum 12 characters</li>
+            <li>Sign-in throttling: 5 failures per user/address, 30 per address, 15-minute lock</li>
+            <li>Sessions end after 2 h idle / 12 h total; a password change signs out every other session</li>
+            <li>Access checks built into every database query (country, company, sales columns)</li>
+            <li>Form protection against cross-site request forgery</li>
+          </ul>
+          <ul class="check" style="padding:0;margin:4px 0 0">
+            <li>Secure, HTTP-only session cookies (confirmed on the live site)</li>
+            <li>Browser security headers (no framing by other sites, no content sniffing)</li>
+            <li>Uploads limited to .xlsx up to 16 MB; file names sanitised</li>
+            <li>CSV exports neutralise spreadsheet formulas; log lines cannot be forged</li>
+            <li>Deploy endpoint accepts only GitHub requests signed with a shared secret</li>
+          </ul>
+        </div></div>
+      <div class="card"><h3><span class="tag warn">Recommended</span></h3>
+        <ul class="dot" style="padding:0;margin:4px 0 0">
+          <li><strong>Force HTTPS</strong> on the host — plain http was not redirected when checked on 25 Sep</li>
+          <li><strong>Repository history:</strong> the first commit included a database copy and an old key; keep the repository private or clean its history</li>
+          <li><strong>Default accounts:</strong> confirm the seeded passwords were changed (the overview warns if not)</li>
+          <li>Run the automated tests before every deploy</li>
+          <li>Keep an off-site copy of database backups</li>
+        </ul></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Security</div>
+</section>
+
+<!-- 21 Performance & reliability -->
+<section class="slide">
+  <div class="kicker">11 · Performance &amp; reliability</div><h2 class="title">Fast for today's data, safe when things go wrong</h2>
+  <div class="body">
+    <div class="grid2">
+      <div class="card"><h3>Performance (in place)</h3>
+        <ul class="check" style="padding:0">
+          <li>Database indexes on company name, agent ID, contact name, email and phone</li>
+          <li>Paged results (20 per search page, 50 per records page); long searches capped</li>
+          <li>Slow password checks done once, not on every overview load (~300 ms → ~65 ms, measured locally)</li>
+          <li>Signed-in user looked up once per request</li>
+          <li>Server-rendered pages with one small script and one stylesheet</li>
+        </ul></div>
+      <div class="card"><h3>Reliability (in place)</h3>
+        <ul class="check" style="padding:0">
+          <li>Imports run as one transaction: a failure leaves the previous data untouched</li>
+          <li>Automatic backup before each import; newest 10 kept</li>
+          <li>A failing overview panel shows a notice instead of breaking the page</li>
+          <li>Friendly pages for expired forms, oversized uploads and server errors</li>
+          <li>Activity log rotates at 1 MB so it cannot fill the disk</li>
+          <li>209 automated checks covering access rules, imports, security fixes and screens</li>
+        </ul></div>
+    </div>
+    <p class="tiny" style="margin-top:12px">Page timings were measured on a laptop against a copy of the database; live response times on the host are Not verified.</p>
+  </div>
+  <div class="foot">Company Directory · Performance &amp; reliability</div>
+</section>
+
+<!-- 22 Progress -->
+<section class="slide">
+  <div class="kicker">12 · Accomplishments</div><h2 class="title">What has been built</h2>
+  <div class="body">
+    <div class="timeline">
+      <div class="t"><div class="when">Versions 1–4 · before Git</div><h3>Foundation</h3><ul><li>Flask + SQLite directory, sign-in, admin area</li><li>Excel importer keeping every column</li><li>Country + company access; sales-column permissions</li><li>First interface refinement</li></ul></div>
+      <div class="t"><div class="when">Versions 5–7 · before Git</div><h3>Hardening &amp; oversight</h3><ul><li>Re-imports keep IDs and access</li><li>Security review: 11 fixes (sessions, throttling, headers…)</li><li>Admin overview with 7 panels; CSV export</li><li>Shared design system</li></ul></div>
+      <div class="t"><div class="when">25 Sep 2026 · morning</div><h3>Delivery pipeline</h3><ul><li>Code on GitHub; live on PythonAnywhere</li><li>Automatic deploy on every push (signed webhook)</li><li>Sample USA data; search by agent ID</li></ul></div>
+      <div class="t"><div class="when">25 Sep 2026 · versions 8–9</div><h3>Productivity &amp; redesign</h3><ul><li>"All companies" access, import preview + backups</li><li>Self-service passwords, country filter</li><li>Status on results; contacts-first profile</li><li>New start page; one consistent stylesheet</li></ul></div>
+    </div>
+    <p class="tiny" style="margin-top:22px">Dates for versions 1–7 are not recorded (they predate version control) and are Not verified; the first user accounts in the database were created on 21 Sep 2026. Versions 8–9 and the pipeline are dated from the Git history.</p>
+  </div>
+  <div class="foot">Company Directory · Accomplishments</div>
+</section>
+
+<!-- 23 Status -->
+<section class="slide">
+  <div class="kicker">13 · Current status</div><h2 class="title">Where the project stands</h2>
+  <div class="body">
+    <div class="grid4" style="align-items:stretch">
+      <div class="card"><h3><span class="tag good">Completed</span></h3><ul><li>Directory search, filters, status, profiles</li><li>Accounts, 3 roles, per-country/company/column access</li><li>Safe imports: preview, backup, history</li><li>Admin overview, records, exports</li><li>Live hosting with automatic deploy</li><li>Phone and tablet layouts</li></ul></div>
+      <div class="card"><h3><span class="tag">In progress</span></h3><ul><li>No partially built features in the code.</li><li>Operational follow-ups: switching existing users to "All companies" where intended; confirming default passwords changed.</li></ul></div>
+      <div class="card"><h3><span class="tag warn">Remaining</span></h3><ul><li>Force HTTPS on the host</li><li>Scheduled daily backup and off-site copy</li><li>Tests run automatically before deploy</li><li>Replace sample countries with real data when available</li></ul></div>
+      <div class="card"><h3><span class="tag bad">Technical debt</span></h3><ul><li>Early Git history holds a database copy and old key</li><li>Agent data can only be corrected through Excel re-imports</li><li>Sign-in throttle memory resets on restart</li><li>Activity history is a log file, not a searchable table</li><li>Country names come from file names ("Usa")</li></ul></div>
+    </div>
+  </div>
+  <div class="foot">Company Directory · Current status</div>
+</section>
+
+<!-- 24 Roadmap -->
+<section class="slide">
+  <div class="kicker">14 · Future improvements</div><h2 class="title">Roadmap options</h2>
+  <div class="body">
+    <table style="font-size:12.5px">
+      <thead><tr><th style="width:21%">Improvement</th><th style="width:31%">Business value</th><th style="width:25%">Who benefits</th><th style="width:10%">Complexity</th><th>Phase</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Security &amp; operations basics</strong></td><td>Force HTTPS, daily backup with off-site copy, tests before deploy</td><td>Company · administrator</td><td>Low</td><td>Next</td></tr>
+        <tr><td><strong>Data clean-up workflow</strong></td><td>Work through the 12 unreadable expiry dates, 22 contacts without email and 249 without phone the overview already lists</td><td>Staff get reliable contacts</td><td>Low–Medium</td><td>Next</td></tr>
+        <tr><td><strong>"My agents" by sales rep</strong></td><td>Each brand's rep sees the agents assigned to them (data already in the sales columns)</td><td>Sales staff</td><td>Medium</td><td>Later</td></tr>
+        <tr><td><strong>Quick corrections in the app</strong></td><td>Fix a phone or email without re-importing a whole country</td><td>Administrator</td><td>Medium</td><td>Later</td></tr>
+        <tr><td><strong>Searchable audit history</strong></td><td>Who changed access or data, and when, kept in the database</td><td>Management · administrator</td><td>Medium</td><td>Later</td></tr>
+        <tr><td><strong>Expiry reminders</strong></td><td>Alert before network memberships lapse <span class="tiny">(depends on hosting plan allowing email — Not verified)</span></td><td>Administrator · sales</td><td>Medium</td><td>Later</td></tr>
+        <tr><td><strong>Company sign-in (single sign-on)</strong></td><td>Staff use their existing work accounts; no separate passwords</td><td>All staff · IT</td><td>Medium–High</td><td>Future</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="foot">Company Directory · Future improvements</div>
+</section>
+
+<!-- 25 Business impact -->
+<section class="slide">
+  <div class="kicker">15 · Business impact</div><h2 class="title">Value to the business</h2>
+  <div class="body">
+    <div class="grid3">
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Time saved</h3><p>One search across all countries replaces opening several workbooks; contacts can be emailed, called or copied directly.</p></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>Controlled information</h3><p>Each person sees only what they need; commercial columns stay with the people entitled to them.</p></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 9.5 4-1.2 7-5 7-9.5V6z"/><path d="m9 12 2 2 4-4"/></svg></span>Fewer mistakes</h3><p>Status on every result; on the snapshot date the overview surfaced 38 attention items in the real India data (expired or expiring networks, inactive agents, unreadable dates).</p></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg></span>Less admin work</h3><p>Imports are previewed and backed up; "All companies" access removes re-granting after every import; users reset their own passwords.</p></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span>Scalable</h3><p>New countries are added by uploading a workbook — no code change; new columns appear automatically.</p></div>
+      <div class="card"><h3><span class="ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>Maintainable</h3><p>Small, standard technology; changes go live automatically after a push; 209 automated checks guard behaviour.</p></div>
+    </div>
+    <p class="tiny" style="margin-top:14px">Benefits are qualitative. No time or cost savings have been measured, so none are claimed.</p>
+  </div>
+  <div class="foot">Company Directory · Business impact</div>
+</section>
+
+<!-- 26 Summary -->
+<section class="slide">
+  <div class="kicker">16 · Executive summary</div><h2 class="title">Summary</h2>
+  <div class="body">
+    <div class="grid3" style="gap:16px 24px">
+      <div><p class="kicker" style="color:var(--muted)">What we built</p><p style="margin-top:6px">A secure internal directory of our partner agents and their contacts, live on the web.</p></div>
+      <div><p class="kicker" style="color:var(--muted)">Why</p><p style="margin-top:6px">Agent information was spread across country workbooks, shared all-or-nothing, and checked by hand.</p></div>
+      <div><p class="kicker" style="color:var(--muted)">What it provides</p><p style="margin-top:6px">Cross-country search with status, contacts-first profiles, per-person access, safe imports and an oversight dashboard.</p></div>
+      <div><p class="kicker" style="color:var(--muted)">Accomplished</p><p style="margin-top:6px">137 companies and 474 contacts loaded; 8 accounts; automatic deployment; 209 automated checks.</p></div>
+      <div><p class="kicker" style="color:var(--muted)">Next</p><p style="margin-top:6px">Force HTTPS and scheduled backups, clean up the data gaps the system found, then rep-focused views and in-app corrections.</p></div>
+      <div><p class="kicker" style="color:var(--muted)">Direction</p><p style="margin-top:6px">Grow from a reliable lookup tool into the day-to-day hub for agent information across all countries.</p></div>
+    </div>
+    <div class="card tint" style="margin-top:26px;display:flex;align-items:center;gap:14px"><span class="ico"><svg viewBox="0 0 24 24"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></span><p style="font-size:15px"><strong>Decision points:</strong> approve the "Next" roadmap items, and confirm which countries' real workbooks should replace the sample data.</p></div>
+  </div>
+  <div class="foot">Company Directory · Executive summary</div>
+</section>
+
+</body>
+</html>

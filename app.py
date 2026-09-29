@@ -324,17 +324,12 @@ def search():
             ids=[r["preview_id"] for r in rows if r["preview_id"]]
             if ids: previews={r["id"]:r for r in c.execute(f"SELECT id,name,job_position,email,phone,landline_no FROM contacts WHERE id IN ({','.join('?'*len(ids))})",ids)}
     start=(page-1)*PAGE_SIZE+1 if total else 0
-    tiles=[]; attention=None
-    if not q and not country:
-        # Start page: the countries this user can browse, with how many companies each holds.
-        clause,params=access_sql(user)
+    attention=None
+    if not q and not country and user["role"]=="ADMIN":
         with db() as c:
-            tiles=[{"name":r["name"],"code":country_code(r["name"]),"companies":r["n"]} for r in c.execute(
-                f"SELECT cn.name,COUNT(co.id) n FROM companies co JOIN countries cn ON cn.id=co.country_id WHERE {clause} GROUP BY cn.id ORDER BY cn.name",params)]
-            if user["role"]=="ADMIN":
-                try: attention=dashboard.attention(c)["total"]
-                except Exception: logging.exception("Attention count failed")
-    return render_template("search.html",rows=rows,previews=previews,q=q,country=country,countries=country_options(user),tiles=tiles,attention=attention,terms_cut=len(q.split())>len(terms),fields=fields,field_labels=FIELD_LABELS,
+            try: attention=dashboard.attention(c)["total"]
+            except Exception: logging.exception("Attention count failed")
+    return render_template("search.html",rows=rows,previews=previews,q=q,country=country,countries=country_options(user),attention=attention,terms_cut=len(q.split())>len(terms),fields=fields,field_labels=FIELD_LABELS,
                            total=total,page=page,pages=pages,page_links=page_links(page,pages),start=start,end=start+len(rows)-1 if rows else 0)
 @app.route("/company/<int:company_id>")
 @login_required

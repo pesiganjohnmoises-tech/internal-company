@@ -211,6 +211,9 @@ FIELD_COLUMNS={"company_name":"co.company_name","city":"co.city","state":"co.sta
 FIELD_LABELS={"company_name":"Company Name Entity","city":"City","state":"State","country":"Country","network":"Network","contact_type":"Contact Type","name":"Name","job_position":"Job Position","email":"Email","phone":"Phone","landline_no":"Landline No","address":"Address"}
 # XLSX sales columns (field keys as built by utils.fields.columns) granted per USER via user_field_access.
 SALES_FIELDS={"x_kgsales":"Kargosmart Sales","x_pcsales":"Panda Cargo Sales","x_tisales":"Tri-Star Logistics Sales","x_kwsales":"KirinWorld Sales"}
+# Alias has no column of its own: it is read from the stored XLSX row ("Alias" header, as every import writes it).
+# json_valid guards against a malformed row stopping the whole query.
+ALIAS_SQL="(CASE WHEN json_valid(co.source_data) THEN json_extract(co.source_data,'$.Alias') END)"
 SEARCH_FIELDS=["company_name","network","city","state","country","contact_type","name","job_position","email","phone","landline_no","address"]
 def visible_fields(user):
     """Every core column, plus the sales columns granted to a User (all of them for Admin/Full Access).
@@ -306,8 +309,8 @@ def search():
     page=arg_int("page") or arg_int("offset")//PAGE_SIZE+1
     user=current_user(); clause,params=access_sql(user); fields=visible_fields(user)
     # Only match on columns this user may see, so search cannot reveal hidden values.
-    # Agent ID is shown to everyone who can open the company, so it is always searchable.
-    cols=["co.agent_id"]+[FIELD_COLUMNS[f] for f in SEARCH_FIELDS if f in fields]
+    # Agent ID and Alias are shown to everyone who can open the company, so they are always searchable.
+    cols=["co.agent_id",ALIAS_SQL]+[FIELD_COLUMNS[f] for f in SEARCH_FIELDS if f in fields]
     rows=[]; previews={}; total=0; pages=1
     # A country on its own lists all of that country's companies the user may see.
     if q or country:
@@ -318,7 +321,7 @@ def search():
             where+=" AND ("+" OR ".join(col+" LIKE ? COLLATE NOCASE" for col in cols)+")"
             params+=["%"+term+"%"]*len(cols)
         # One result per company; a term must match the company or one of its contacts.
-        sql=f"""SELECT co.id,co.agent_id,co.source_data,co.company_name,co.network,co.city,co.state,cn.name country,COUNT(ct.id) matched,MIN(ct.id) preview_id,
+        sql=f"""SELECT co.id,co.agent_id,{ALIAS_SQL} alias,co.source_data,co.company_name,co.network,co.city,co.state,cn.name country,COUNT(ct.id) matched,MIN(ct.id) preview_id,
             (SELECT COUNT(*) FROM contacts c2 WHERE c2.company_id=co.id) contacts
             FROM companies co JOIN countries cn ON cn.id=co.country_id LEFT JOIN contacts ct ON ct.company_id=co.id WHERE {where} GROUP BY co.id"""
         with db() as c:

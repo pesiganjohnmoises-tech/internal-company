@@ -61,6 +61,18 @@ check("exact agent ID ranks before longer IDs",found(adm,"SGP001")[:2]==["Merlio
 con.execute("DELETE FROM companies WHERE agent_id='SGP0010'"); con.commit()
 check("Excel float IDs read as whole numbers",agent_id_value(1001.0)=="1001" and agent_id_value(" SGP001 ")=="SGP001")
 check("user without extra field grants can search agent ID",found(client("kharla","ChangeMe-Kharla-2026!"),"SGP001")==["Merlion Bridge Logistics Pte. Ltd."])
+# Alias (stored in the XLSX row, not a column) is searchable, case-insensitive, partial, one result per company.
+con.execute("INSERT INTO companies(country_id,company_name,agent_id,source_data) VALUES(?,?,?,?)",(sg_cid,"Zeta Alias Test Logistics","SGPZ01",'{"Company Name Entity":"Zeta Alias Test Logistics","Alias":"QXLS"}'))
+zeta=q("SELECT id FROM companies WHERE company_name='Zeta Alias Test Logistics'")
+con.execute("INSERT INTO contacts(company_id,name,email) VALUES(?,?,?),(?,?,?)",(zeta,"Qxls Person","a@qxls.example",zeta,"Other Qxls","b@qxls.example"))
+con.execute("INSERT INTO companies(country_id,company_name,source_data) VALUES(?,?,?)",(sg_cid,"Broken Row Test","{not json")); con.commit()
+check("alias search finds the company, any case",all(found(adm,t)==["Zeta Alias Test Logistics"] for t in ("QXLS","qxls","Qxls")))
+check("partial alias search finds the company","Zeta Alias Test Logistics" in found(adm,"QXL"))
+check("alias and contact matches give one result",found(adm,"qxls").count("Zeta Alias Test Logistics")==1)
+check("results show the matching alias",'class="result-alias">Also known as <mark>QXLS</mark>' in adm.get("/search?q=qxls").data.decode())
+check("user without extra field grants can search alias",found(client("kharla","ChangeMe-Kharla-2026!"),"qxls")==["Zeta Alias Test Logistics"])
+check("a malformed stored row does not break search",found(adm,"Broken Row Test")==["Broken Row Test"])
+con.execute("DELETE FROM contacts WHERE company_id=?",(zeta,)); con.execute("DELETE FROM companies WHERE company_name IN ('Zeta Alias Test Logistics','Broken Row Test')"); con.commit()
 
 # --- Sales column permissions (v4) -------------------------------------------------------------------
 adm.post("/admin/users/create",data={"username":"fulltest","password":PW,"role":"FULL_ACCESS"})

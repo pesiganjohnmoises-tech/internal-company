@@ -49,6 +49,8 @@
   <li class="result-row">
     <a class="result-main" href="{{url_for('company',company_id=r.id)}}">
       <span class="result-name">{{r.company_name|hl(q) if 'company_name' in fields else 'Company record'}}</span>
+      {% set alias=r.alias|string if r.alias is not none else '' %}
+      {% if alias and q and q.lower().split()|select('in',alias.lower())|list %}<span class="result-alias">Also known as {{alias|hl(q)}}</span>{% endif %}
       <span class="result-meta">
         {% if r.agent_id %}<span class="ref">{{r.agent_id|hl(q)}}</span>{% endif %}
         <span class="loc">{% if place %}{% for x in place %}{{x|hl(q)}}{% if not loop.last %}, {% endif %}{% endfor %} · {% endif %}{% if 'country' in fields %}<span class="cc" title="{{r.country}}">{{r.code}}</span>{% endif %}</span>

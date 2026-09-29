@@ -28,59 +28,78 @@
   </dl>
 </header>
 
-<nav class="section-nav" aria-label="Record sections">
-  <a href="#sec-contacts">Contacts <span>{{detail.contacts|length}}</span></a>
-  {% for s in detail.sections %}<a href="#sec-{{s.id}}">{{s.title}}</a>{% endfor %}
-</nav>
+{# Workbook: one sheet per tab. Without JavaScript every sheet is shown and the tabs jump to it. #}
+<div class="workbook" id="workbook">
+  <div class="sheet-tabs" role="tablist" aria-label="Record sheets">
+    <a class="sheet-tab" role="tab" id="tab-contacts" href="#sec-contacts" aria-controls="sec-contacts">Contacts <span class="tab-count">{{detail.contacts|length}}</span></a>
+    {% for s in detail.sections %}<a class="sheet-tab" role="tab" id="tab-{{s.id}}" href="#sec-{{s.id}}" aria-controls="sec-{{s.id}}">{{s.title}} <span class="tab-count">{{s.filled}}/{{s.fields|length}}</span></a>{% endfor %}
+    {% if detail.sections|length>1 %}<a class="sheet-tab" role="tab" id="tab-all" href="#sec-all" data-all aria-controls="{% for s in detail.sections %}sec-{{s.id}} {% endfor %}">All fields</a>{% endif %}
+  </div>
 
-<section class="panel contacts-section" id="sec-contacts" aria-labelledby="sec-contacts-title">
-  <div class="panel-head">
-    <h2 id="sec-contacts-title">Contacts <span class="count">{{detail.contacts|length}}</span></h2>
-    {% if detail.contacts|length > 4 %}
-    <label class="contact-filter"><span class="sr-only">Filter contacts</span>
-      <input type="search" id="contact-filter" placeholder="Filter by name, role, email, phone…" autocomplete="off">
+  <div class="sheet-toolbar">
+    <label class="sheet-filter">{{icon('search',16)}}<span class="sr-only">Filter rows in this sheet</span>
+      <input type="search" id="sheet-filter" placeholder="Filter rows…" autocomplete="off">
     </label>
-    {% endif %}
+    <label class="sheet-toggle" id="hide-empty-wrap"><input type="checkbox" id="hide-empty"> Hide empty fields</label>
+    <span class="sheet-status" id="sheet-status" role="status" aria-live="polite"></span>
+    <button type="button" class="secondary sheet-copy" id="sheet-copy" title="Copy the visible rows; paste straight into Excel">{{icon('copy',15)}} <span>Copy rows</span></button>
   </div>
-  {% if detail.contacts %}
-  {% set cols=detail.contact_columns|rejectattr('0','equalto','address')|list %}
-  <div class="table-wrap">
-    <table class="data-table contact-table" id="contact-cards">
-      <thead><tr><th>Name</th>{% for key,label in cols %}<th>{{label}}</th>{% endfor %}</tr></thead>
-      <tbody>
-        {% for c in detail.contacts %}{% set addr=c.by_key.get('address') %}
-        <tr class="contact-card" data-search="{{c.search}}">
-          <td class="contact-name">
-            <strong{% if not c.named %} class="unnamed"{% endif %}>{{c.name}}</strong>
-            {% if addr and not addr.value.empty and not addr.value.same %}<span class="cell-sub">{{addr.value.text}}</span>{% endif %}
-            {% if c.differs %}<details class="row-values"><summary>Differs from company record ({{c.differs|length}})</summary>{{ field_list(c.differs, "compact-list") }}</details>{% endif %}
-            {% if user.role=='ADMIN' and c.source_row %}<span class="cell-sub">Source row {{c.source_row}}</span>{% endif %}
-          </td>
-          {% for key,label in cols %}{% set f=c.by_key[key] %}
-          <td data-label="{{label}}" class="kind-{{f.kind}}{{' is-empty' if f.value.empty}}">
-            {{ value(f.value) }}{% if f.kind in ('email','phone') and not f.value.empty %}<button type="button" class="icon-btn" data-copy="{{f.value.links|map('first')|join(', ') if f.value.links else f.value.text}}" aria-label="Copy {{label|lower}}">{{icon('copy',14)}}</button>{% endif %}
-          </td>
-          {% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <p class="empty-filter" id="contact-empty" hidden>No contacts match this filter.</p>
-  {% else %}
-  <div class="empty compact-empty"><h3>No contacts</h3><p>This company has no contact rows in the source file.</p></div>
-  {% endif %}
-</section>
 
-<div class="detail-sections">
-  {% for s in detail.sections %}
-  <section class="detail-card" id="sec-{{s.id}}" aria-labelledby="sec-{{s.id}}-title">
-    <details open>
-      <summary><h2 id="sec-{{s.id}}-title">{{s.title}}</h2><span class="section-count">{{s.filled}} of {{s.fields|length}} provided</span></summary>
-      {{ field_list(s.fields) }}
-    </details>
+  <section class="sheet-panel contacts-section" id="sec-contacts" role="tabpanel" aria-labelledby="tab-contacts">
+    <h2 class="sheet-caption">Contacts <span class="count">{{detail.contacts|length}}</span></h2>
+    {% if detail.contacts %}
+    {% set cols=detail.contact_columns %}
+    <div class="sheet-grid">
+      <table class="sheet-table contact-table" id="contact-cards">
+        <thead><tr><th class="row-num" aria-label="Row"></th><th class="col-name" data-sort>Name</th>{% for key,label in cols %}<th data-sort class="col-{{key}}">{{label}}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for c in detail.contacts %}
+          <tr class="contact-card">
+            <td class="row-num"></td>
+            <td class="contact-name">
+              <strong class="cell-main{% if not c.named %} unnamed{% endif %}">{{c.name}}</strong>
+              {% if c.differs %}<details class="row-values"><summary>Differs from company record ({{c.differs|length}})</summary>{{ field_list(c.differs, "compact-list") }}</details>{% endif %}
+              {% if user.role=='ADMIN' and c.source_row %}<span class="cell-sub">Source row {{c.source_row}}</span>{% endif %}
+            </td>
+            {% for key,label in cols %}{% set f=c.by_key[key] %}
+            <td data-label="{{label}}" class="kind-{{f.kind}}{{' is-empty' if f.value.empty}}">
+              <span class="cell-main">{{ value(f.value) }}</span>{% if f.kind in ('email','phone') and not f.value.empty %}<button type="button" class="icon-btn" data-copy="{{f.value.links|map('first')|join(', ') if f.value.links else f.value.text}}" aria-label="Copy {{label|lower}}">{{icon('copy',14)}}</button>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="empty-filter" hidden>No rows match this filter.</p>
+    {% else %}
+    <div class="empty compact-empty"><h3>No contacts</h3><p>This company has no contact rows in the source file.</p></div>
+    {% endif %}
   </section>
-  {% endfor %}
+
+  <div class="detail-sections">
+    {% for s in detail.sections %}
+    <section class="sheet-panel detail-card" id="sec-{{s.id}}" role="tabpanel" aria-labelledby="tab-{{s.id}}">
+      <h2 class="sheet-caption" id="sec-{{s.id}}-title">{{s.title}} <span class="section-count">{{s.filled}} of {{s.fields|length}} provided</span></h2>
+      <div class="sheet-grid">
+        <table class="sheet-table field-table" aria-labelledby="sec-{{s.id}}-title">
+          <thead><tr><th class="row-num" aria-label="Row"></th><th class="col-field" data-sort>Field</th><th class="col-value" data-sort>Value</th><th class="col-source col-optional" data-sort>XLSX column</th></tr></thead>
+          <tbody>
+            {% for f in s.fields %}
+            <tr class="field-row{% if f.value.empty %} is-empty{% endif %}">
+              <td class="row-num"></td>
+              <th scope="row" class="field-label">{{f.label}}</th>
+              <td class="kind-{{f.kind}}"><span class="cell-main">{{ value(f.value) }}</span></td>
+              <td class="col-source col-optional">{% if f.source %}<span class="field-source">{{f.source}}</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="empty-filter" hidden>No rows match this filter.</p>
+    </section>
+    {% endfor %}
+  </div>
 </div>
 {% if not detail.has_source %}<p class="tiny">Only the core fields are available for this record. Re-import its workbook to capture all XLSX columns.</p>{% endif %}
 <script type="application/json" id="recent-item">{{ {"id":company.id,"name":company.company_name if can_name else "Company record","country":company.country,"agent":agent_id,"place":place}|tojson }}</script>

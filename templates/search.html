@@ -2,7 +2,8 @@
 {% block title %}{{'Search results' if q or country else 'Directory'}} · Internal Company Directory{% endblock %}
 {% block content %}
 {% macro search_form(compact=False) -%}
-<form class="searchbar{% if compact %} search-compact{% endif %}" method="get" action="{{url_for('search')}}" role="search">
+<form class="{{'searchbar search-compact' if compact else 'home-form'}}" method="get" action="{{url_for('search')}}" role="search">
+  {% if not compact %}<div class="searchbar searchbar-lg">{% endif %}
   {{icon('search',20)}}
   <label class="sr-only" for="directory-query">Search the directory</label>
   <input id="directory-query" name="q" value="{{q}}" placeholder="Agent name, agent ID, city, network or contact…" autocomplete="off"{% if not q and not country %} autofocus{% endif %}>
@@ -14,6 +15,7 @@
   </select>
   {% endif %}
   {% if q or country %}<a class="clear-search" href="{{url_for('search')}}">Clear</a>{% endif %}
+  {% if not compact %}</div>{% endif %}
   <button class="primary">Search</button>
 </form>
 {%- endmacro %}
@@ -23,31 +25,11 @@
 <div class="search-page">
 {% if not q and not country %}
 <section class="home">
-  <div class="home-search">
-    <h1 class="page-title">Find an agent</h1>
-    <p class="muted">Search partner agents and their contacts{% if tiles %} across {{tiles|length}} countr{{'y' if tiles|length==1 else 'ies'}}{% endif %}.</p>
-    {{ search_form() }}
-  </div>
+  <h1 class="home-title">Search</h1>
+  {{ search_form() }}
   {% if attention %}
   <a class="notice warn attention-link" href="{{url_for('admin_dashboard')}}#attention">{{icon('alert',18)}}<span><strong>{{attention}} agent{{'s' if attention!=1}} need attention</strong> — expired or expiring networks, pending KYC or inactive status.</span><span class="link-arrow">Review →</span></a>
   {% endif %}
-  <div class="home-grid">
-    <section class="panel" aria-labelledby="browse-title">
-      <h2 id="browse-title" class="panel-title">Browse by country</h2>
-      {% if tiles %}
-      <ul class="country-tiles">
-        {% for t in tiles %}<li><a href="{{url_for('search',country=t.name)}}"><span class="code">{{t.code}}</span><span class="tile-name">{{t.name}}</span><span class="tile-count">{{t.companies}} agent{{'s' if t.companies!=1}}</span></a></li>{% endfor %}
-      </ul>
-      {% else %}
-      <p class="muted">You don't have access to any countries yet. Ask an administrator to grant access.</p>
-      {% endif %}
-    </section>
-    <section class="panel" aria-labelledby="recent-title">
-      <h2 id="recent-title" class="panel-title">{{icon('history',16)}} Recently viewed</h2>
-      <ol class="recent-list" id="recent-list" hidden></ol>
-      <p class="muted" id="recent-empty">Agents you open appear here, so you can get back to them quickly.</p>
-    </section>
-  </div>
 </section>
 {% else %}
 {{ search_form(True) }}

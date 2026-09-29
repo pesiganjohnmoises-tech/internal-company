@@ -9,21 +9,135 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// Company page workbook: sheet tabs, row filter, column sort, hide-empty and copy-as-TSV.
 document.addEventListener('DOMContentLoaded', () => {
-  const filter = document.getElementById('contact-filter');
-  if (!filter) return;
-  const cards = [...document.querySelectorAll('#contact-cards .contact-card')];
-  const empty = document.getElementById('contact-empty');
-  filter.addEventListener('input', () => {
+  const book = document.getElementById('workbook');
+  if (!book) return;
+  const tabs = [...book.querySelectorAll('.sheet-tab')];
+  const panels = [...book.querySelectorAll('.sheet-panel')];
+  const filter = document.getElementById('sheet-filter');
+  const hideEmpty = document.getElementById('hide-empty');
+  const hideWrap = document.getElementById('hide-empty-wrap');
+  const status = document.getElementById('sheet-status');
+  const copy = document.getElementById('sheet-copy');
+  // A cell's visible value: screen-reader text and the empty-value dash are left out.
+  const cellText = cell => {
+    const main = (cell.querySelector('.cell-main') || cell).cloneNode(true);
+    main.querySelectorAll('.sr-only, .value-empty, button').forEach(x => x.remove());
+    return main.textContent.replace(/\s+/g, ' ').trim();
+  };
+  book.classList.add('is-tabbed');
+  let active = [];
+
+  const refresh = () => {
     const terms = filter.value.toLowerCase().split(/\s+/).filter(Boolean);
-    let shown = 0;
-    cards.forEach(card => {
-      const match = terms.every(t => card.dataset.search.includes(t));
-      card.hidden = !match;
-      if (match) shown++;
+    let shown = 0, total = 0;
+    active.forEach(panel => {
+      const rows = [...panel.querySelectorAll('tbody tr')];
+      let visible = 0;
+      rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        const keep = terms.every(t => text.includes(t)) && !(hideEmpty.checked && row.classList.contains('is-empty'));
+        row.hidden = !keep;
+        if (keep) visible++;
+      });
+      const empty = panel.querySelector('.empty-filter');
+      if (empty) empty.hidden = visible > 0 || rows.length === 0;
+      // In "All fields", a section with no matching rows is left out entirely.
+      panel.classList.toggle('no-match', active.length > 1 && visible === 0);
+      shown += visible; total += rows.length;
     });
-    empty.hidden = shown > 0;
+    status.textContent = total ? (shown === total ? `${total} row${total === 1 ? '' : 's'}` : `${shown} of ${total} rows`) : '';
+    copy.disabled = shown === 0;
+  };
+
+  const select = (tab, focus) => {
+    tabs.forEach(t => {
+      const on = t === tab;
+      t.setAttribute('aria-selected', on);
+      t.tabIndex = on ? 0 : -1;
+    });
+    const ids = tab.getAttribute('aria-controls').split(/\s+/).filter(Boolean);
+    active = panels.filter(p => ids.includes(p.id));
+    panels.forEach(p => { p.hidden = !active.includes(p); });
+    book.classList.toggle('show-all', active.length > 1);
+    hideWrap.hidden = active.every(p => p.classList.contains('contacts-section'));
+    if (focus) tab.focus();
+    refresh();
+  };
+
+  tabs.forEach(tab => tab.addEventListener('click', event => {
+    event.preventDefault();
+    select(tab);
+    history.replaceState(null, '', tab.getAttribute('href'));
+  }));
+  // Arrow keys move between tabs, as in a standard tab list.
+  book.querySelector('.sheet-tabs').addEventListener('keydown', event => {
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    const tab = tabs[(next + tabs.length) % tabs.length];
+    select(tab, true);
+    history.replaceState(null, '', tab.getAttribute('href'));
   });
+  filter.addEventListener('input', refresh);
+  hideEmpty.addEventListener('change', refresh);
+
+  // Click a column header to sort; click again to reverse. Empty cells always sort last.
+  book.querySelectorAll('th[data-sort]').forEach(th => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'sort-btn';
+    button.append(...th.childNodes);
+    th.append(button);
+    button.addEventListener('click', () => {
+      const table = th.closest('table');
+      const col = [...th.parentNode.children].indexOf(th);
+      const dir = th.getAttribute('aria-sort') === 'ascending' ? -1 : 1;
+      table.querySelectorAll('th[aria-sort]').forEach(x => x.removeAttribute('aria-sort'));
+      th.setAttribute('aria-sort', dir === 1 ? 'ascending' : 'descending');
+      const body = table.tBodies[0];
+      const value = row => { const c = row.children[col]; return cellText(c); };
+      [...body.rows].sort((a, b) => {
+        const x = value(a), y = value(b);
+        if (!x || !y) return (!x) - (!y);
+        return dir * x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
+      }).forEach(row => body.append(row));
+    });
+  });
+
+  // Copy the visible rows (with headers) as tab-separated text, which pastes into Excel as cells.
+  copy.addEventListener('click', () => {
+    if (!navigator.clipboard) return;
+    const lines = [];
+    active.forEach(panel => {
+      const table = panel.querySelector('table');
+      if (!table) return;
+      const clean = cells => cells.filter(c => !c.classList.contains('row-num')).map(cellText);
+      const head = clean([...table.tHead.rows[0].cells]);
+      if (active.length > 1) head.unshift('Section');
+      if (!lines.length) lines.push(head.join('\t'));
+      const title = panel.querySelector('.sheet-caption').firstChild.textContent.trim();
+      [...table.tBodies[0].rows].filter(r => !r.hidden).forEach(r => {
+        const cells = clean([...r.cells]);
+        if (active.length > 1) cells.unshift(title);
+        lines.push(cells.join('\t'));
+      });
+    });
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      const label = copy.querySelector('span');
+      label.textContent = 'Copied';
+      copy.classList.add('copied');
+      setTimeout(() => { label.textContent = 'Copy rows'; copy.classList.remove('copied'); }, 1400);
+    });
+  });
+
+  // Open the sheet named in the URL (e.g. #sec-contact), else the first one.
+  const fromHash = () => location.hash.length > 1 && (tabs.find(t => t.getAttribute('href') === location.hash)
+    || tabs.find(t => !t.hasAttribute('data-all') && t.getAttribute('aria-controls') === location.hash.slice(1)));
+  select(fromHash() || tabs[0]);
+  window.addEventListener('hashchange', () => { const t = fromHash(); if (t) select(t); });
 });
 
 // Account menu (header): close on outside click or Escape.

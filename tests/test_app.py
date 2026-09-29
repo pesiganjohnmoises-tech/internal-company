@@ -73,12 +73,12 @@ LABELS={"Kargosmart Sales":"Nina","Panda Cargo Sales":"Marco","Tri-Star Logistic
 expect={"ann":{"Kargosmart Sales"},"jane":{"Panda Cargo Sales"},"moises":{"Tri-Star Logistics Sales","KirinWorld Sales"},"fulltest":set(LABELS),"admin":set(LABELS)}
 for u,e in expect.items():
     html=client(u).get(f"/company/{sg}").data.decode()
-    got={l for l in LABELS if f"<dt>{l}" in html}
+    got={l for l in LABELS if f'class="field-label">{l}<' in html}
     check(f"{u} sees sales columns {sorted(e)}",got==e)
     if u in plan: check(f"{u}: restricted sales values absent from HTML",not [v for l,v in LABELS.items() if l not in e and f">{v}<" in html])
 # User company view shows every non-sales column Full Access sees (v7).
 import re
-def dts(html): return re.findall(r"<dt>([^<]*)",html)
+def dts(html): return re.findall(r'(?:<dt>|<th scope="row" class="field-label">)([^<]*)',html)
 full_dts=dts(client("fulltest").get(f"/company/{sg}").data.decode())
 check("user company view: all non-sales columns of Full Access",dts(client("ann").get(f"/company/{sg}").data.decode())==[d for d in full_dts if d.strip() not in set(LABELS)-{"Kargosmart Sales"}])
 check("user company view: old sales header kept only as XLSX hint",">KG Sales<" in client("ann").get(f"/company/{sg}").data.decode())
@@ -143,7 +143,7 @@ check("re-import keeps company IDs",{r["id"] for r in con.execute("SELECT co.id 
 check("re-import keeps User company grants",q("SELECT COUNT(*) FROM user_company_access a JOIN companies co ON co.id=a.company_id JOIN countries cn ON cn.id=co.country_id WHERE cn.name='Singapore' AND a.user_id=?",ids["moises"])==sg_grants>0)
 check("re-import replaces contacts, no duplicates",q("SELECT COUNT(*) FROM contacts ct JOIN companies co ON co.id=ct.company_id JOIN countries cn ON cn.id=co.country_id WHERE cn.name='Singapore'")==sg_contacts)
 check("re-import leaves no orphans",q("SELECT COUNT(*) FROM contacts WHERE company_id NOT IN (SELECT id FROM companies)")==0)
-check("moises still sees Singapore record after re-import",b"<dt>Tri-Star Logistics Sales" in client("moises").get(f"/company/{sg}").data)
+check("moises still sees Singapore record after re-import",b'class="field-label">Tri-Star Logistics Sales<' in client("moises").get(f"/company/{sg}").data)
 # A workbook without one company: that company, its contacts and grants go; a renamed one is added.
 wb=load_workbook(TMP/"data/singapore.xlsx"); ws=wb.active
 hdr=[c.value for c in ws[1]]; ci=hdr.index("Company Name Entity")
@@ -492,8 +492,8 @@ while True:
     page+=1
 check("country filter alone lists every company in that country",sorted(got,key=int)==india_ids)
 check("country filter narrows a text search",all(i in india_ids for i in cards(boss,q="logistics",country="India")) and cards(boss,q="logistics",country="India"))
-h=client("v8user","Brand-New-Pass-2026!").get("/search").data.decode()
-check("restricted user browses only granted countries",'href="/search?country=Singapore"' in h and 'country=India"' not in h)
+v8c=client("v8user","Brand-New-Pass-2026!")
+check("restricted user browses only granted countries",cards(v8c,country="Singapore") and not cards(v8c,country="India"))
 landline=q("SELECT landline_no FROM contacts ct JOIN companies co ON co.id=ct.company_id WHERE co.country_id=? AND landline_no IS NOT NULL LIMIT 1",sg_cid)
 check("user can search by landline, which the company page shows",bool(cards(client("v8user","Brand-New-Pass-2026!"),q=landline)))
 check("unknown country shows an empty result, not an error",client("v8user","Brand-New-Pass-2026!").get("/search?country=India").status_code==200 and not cards(client("v8user","Brand-New-Pass-2026!"),country="India"))
@@ -557,15 +557,16 @@ hu=client("v8user","Brand-New-Pass-2026!").get(f"/company/{st_id}").data.decode(
 check("company: record number and source file are admin-only","Record #" in h and "Record #" not in hu and "Source row" not in hu)
 check("company: upload prefix removed from the source name",not re.search(r"[0-9a-f]{12}_\w+\.xlsx",h))
 check("company: contacts come before the detail sections",h.index('id="sec-contacts"')<h.index('class="detail-sections"'))
+check("company: one sheet tab per section, plus Contacts",h.count('role="tab"')==h.count('role="tabpanel"')+(1 if h.count('class="sheet-panel detail-card"')>1 else 0) and 'aria-controls="sec-contacts"' in h)
+check("company: field sheets are tables with sortable headers",'class="sheet-table field-table"' in h and "data-sort" in h)
 check("company: copy buttons on contact email/phone",'data-copy=' in h)
 check("company: recently-viewed item is JSON-escaped",'<script type="application/json" id="recent-item">' in h and "</script>" in h.split('id="recent-item">')[1])
 con.execute("UPDATE contacts SET landline_no=NULL WHERE company_id=?",(st_id,)); con.commit()
 check("company: a contact column nobody fills in is hidden","<th>Landline No</th>" not in boss.get(f"/company/{st_id}").data.decode())
 # Start page
 h=client("v8user","Brand-New-Pass-2026!").get("/search").data.decode()
-check("start page: tiles only for granted countries, with counts",'href="/search?country=Singapore"' in h and "country=India" not in h and re.search(r'tile-count">\d+ agents?<',h))
+check("start page: one centred search, no country tiles or recently viewed",'class="home-form"' in h and 'name="q"' in h and "country-tiles" not in h and 'id="recent-list"' not in h)
 check("start page: attention link for admins only","need attention" in boss.get("/search").data.decode() and "need attention" not in h)
-check("start page: recently viewed placeholder present",'id="recent-list"' in h)
 check("header: Directory comes before Admin",(lambda b: b.index(">Directory<")<b.index(">Admin<"))(boss.get("/search").data.decode()))
 # Per-country access choice
 boss.post(f"/admin/users/{v8['v8partial']}",data={"role":"USER","status":"ACTIVE","countries":[str(sg_cid)],f"scope-{sg_cid}":"all"})

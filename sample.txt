@@ -7,3 +7,10 @@ sample test from kargosmart laptop
 
 git config --global user.name "John Moises Pesigan"
 git config --global user.email "pesigan.johnmoises@gmail.com"
+
+Tab- General Information
+Agent ID, Alias, Company Name entity, County, State, City, Agent Status
+Tab-Contact Information
+Sales, Contact Type, Name, Job Position, Email, Phone, landline, street address
+Tab- Payment term
+Payment term, Network, Network Expiry, KYC Status, Mapping Status

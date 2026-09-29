@@ -13,15 +13,20 @@ from utils.importer import column_map, norm
 SECTIONS=[("general","General information"),("contact","Contact information"),("payment","Payment term"),("additional","Additional information")]
 # Columns describing the person on a row; everything else describes the company.
 CONTACT_FIELDS=("name","contact_type","job_position","email","phone","landline_no","address")
+# Order of the contact rows on the company page (Name is placed by the template, after Contact Type).
+CONTACT_ORDER=["contact_type","name","job_position","email","phone","landline_no","address"]
 MAPPED_SECTIONS={"company_name":"general","country":"general","state":"general","city":"general","address":"contact","network":"payment"}
 # Unmapped XLSX columns keyed by norm(header).
 EXTRA_SECTIONS={"agentidfinal":"general","alias":"general","agentstatus":"general","sourceofagent":"general",
                 "kgsales":"contact","pcsales":"contact","tisales":"contact","kwsales":"contact",
                 "paymentterms":"payment","networkexpiry":"payment","kycstatus":"payment","mappingstatus":"payment"}
-# Row order within a section; fields not listed follow in workbook order.
-SECTION_ORDER={"general":["x_agentidfinal","x_alias","company_name","country","state","city","x_agentstatus"],
-               "contact":["x_kgsales","x_pcsales","x_tisales","x_kwsales","address"],
-               "payment":["x_paymentterms","network","x_networkexpiry","x_kycstatus","x_mappingstatus"]}
+# Cards within a section, in display order; fields not listed follow in workbook order under "Other details".
+SECTION_GROUPS={"general":[("Agent",["x_agentidfinal","x_alias","company_name"]),("Location",["country","state","city"]),
+                           ("Status",["x_agentstatus","x_sourceofagent"])],
+                "contact":[("Sales team",["x_kgsales","x_pcsales","x_tisales","x_kwsales"]),("Company address",["address"])],
+                "payment":[("Payment",["x_paymentterms"]),("Network membership",["network","x_networkexpiry"]),
+                           ("Compliance",["x_kycstatus","x_mappingstatus"])]}
+EXPIRY_SOON_DAYS=90  # expiry within this many days is flagged (company page, results, admin overview)
 # "Street" (and other address aliases) is presented as Street address; the XLSX header is kept as a hint.
 LABELS={"address":"Street address",
         # Sales display names (same as app.SALES_FIELDS); XLSX headers stay "KG Sales" etc.
@@ -88,8 +93,13 @@ def present(value,kind):
     if kind in ("date","expiry"):
         d=parse_date(value)
         if d:
-            expired=kind=="expiry" and d<date.today()
-            return {"text":f"{d.day} {d:%b %Y}","raw":text,"note":"Expired" if expired else None}
+            out={"text":f"{d.day} {d:%b %Y}","raw":text}
+            if kind=="expiry":
+                days=(d-date.today()).days
+                if days<0: out.update(note="Expired",note_tone="bad")
+                elif days<=EXPIRY_SOON_DAYS: out.update(note=f"Expires in {days} day{'s' if days!=1 else ''}",note_tone="warn")
+                else: out.update(note="Valid",note_tone="good")
+            return out
     if kind=="status":
         label={"y":"Yes","n":"No"}.get(text.lower(),text)
         return {"text":label,"tone":tone(label)}
@@ -114,9 +124,15 @@ def build_company_detail(company,contacts,can_view):
     sections=[]
     for sid,title in SECTIONS:
         fields=[field(k,h,company_value(k,h)) for k,h in company_cols if section_for(k)==sid]
-        order=SECTION_ORDER.get(sid,[]); fields.sort(key=lambda f: order.index(f["key"]) if f["key"] in order else len(order))
-        # The contact sheet also holds the contacts table, so it is kept even without company fields.
-        if fields or sid=="contact": sections.append({"id":sid,"title":title,"fields":fields,"filled":sum(not f["value"].get("empty") for f in fields)})
+        groups=[]; placed=set()
+        for gtitle,keys in SECTION_GROUPS.get(sid,[]):
+            got=[f for k in keys for f in fields if f["key"]==k]
+            if got: groups.append({"title":gtitle,"fields":got}); placed.update(f["key"] for f in got)
+        rest=[f for f in fields if f["key"] not in placed]
+        if rest: groups.append({"title":"Other details" if groups else "Details","fields":rest})
+        fields=[f for g in groups for f in g["fields"]]
+        # The contact sheet also holds the contact cards, so it is kept even without company fields.
+        if fields or sid=="contact": sections.append({"id":sid,"title":title,"fields":fields,"groups":groups,"filled":sum(not f["value"].get("empty") for f in fields)})
     by_key={f["key"]:f for s in sections for f in s["fields"]}
     header={k:by_key[k] for k in ("x_agentidfinal","x_alias","x_agentstatus","network") if k in by_key and not by_key[k]["value"].get("empty")}
     cards=[]
@@ -135,6 +151,7 @@ def build_company_detail(company,contacts,can_view):
         search=" ".join(str(ct[k]) for k in CONTACT_FIELDS if can_view(k) and not is_empty(ct[k])).lower()
         cards.append({"id":ct["id"],"name":name or f"Contact {n}","named":bool(name),"initials":initials(name) if name else "#",
                       "fields":fields,"by_key":{f["key"]:f for f in fields},"differs":differs,"source_row":ct["source_row"],"search":search})
-    # Contact table columns: only those the user may see and at least one contact fills in.
-    contact_columns=[(k,LABELS.get(k,h)) for k,h in contact_cols if any(not c["by_key"][k]["value"].get("empty") and not c["by_key"][k]["value"].get("same") for c in cards)]
+    # Contact rows: only those the user may see and at least one contact fills in, in CONTACT_ORDER.
+    contact_columns=[(k,LABELS.get(k,h)) for k,h in contact_cols if any(not c["by_key"][k]["value"].get("empty") for c in cards)]
+    contact_columns.sort(key=lambda kh: CONTACT_ORDER.index(kh[0]) if kh[0] in CONTACT_ORDER else len(CONTACT_ORDER))
     return {"sections":sections,"header":header,"contacts":cards,"contact_columns":contact_columns,"has_source":bool(source),"by_key":by_key}

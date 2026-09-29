@@ -4,10 +4,9 @@ Search results, the company header and the admin overview all judge status here,
 "needs attention" on the overview shows the same warning wherever users meet it.
 """
 from datetime import date
-from utils.fields import load, is_empty, parse_date, tone
+from utils.fields import load, is_empty, parse_date, tone, EXPIRY_SOON_DAYS
 from utils.importer import norm
 
-EXPIRY_SOON_DAYS=90
 RANK={"bad":3,"warn":2,"good":1,"neutral":0}
 
 def agent_status(source_data,today=None):

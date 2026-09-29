@@ -245,79 +245,85 @@ td.nowrap,.nowrap{white-space:nowrap;overflow-wrap:normal}
 .section-nav a:hover{border-color:var(--brand-100);color:var(--brand)}
 .section-nav a span{margin-left:3px;color:var(--muted);font-weight:500}
 [id^="sec-"],.dash-panel{scroll-margin-top:120px}
-/* Workbook: sheet tabs over spreadsheet-style tables. */
-.workbook{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-sm)}
-.sheet-tabs{position:sticky;top:60px;z-index:6;display:flex;gap:2px;overflow-x:auto;overflow-y:hidden;padding:6px 8px 0;background:var(--surface-2);border-bottom:1px solid var(--line);border-radius:var(--r) var(--r) 0 0;scrollbar-width:thin}
-.sheet-tab{flex-shrink:0;display:inline-flex;align-items:center;gap:7px;padding:10px 18px;margin-bottom:-1px;border:1px solid transparent;border-bottom:0;border-radius:var(--r-sm) var(--r-sm) 0 0;color:var(--ink-2);font-size:14px;font-weight:600;text-decoration:none;white-space:nowrap}
-.sheet-tab:hover{color:var(--brand);background:var(--surface)}
-.sheet-tab[aria-selected="true"]{background:var(--surface);border-color:var(--line);color:var(--brand);box-shadow:inset 0 2px 0 var(--brand)}
-.tab-count{font-size:11.5px;font-weight:600;color:var(--muted);background:var(--neutral-bg);border-radius:4px;padding:0 6px}
-.sheet-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:10px 12px;border-bottom:1px solid var(--line)}
+/* Record sheets: Excel-style sheet tabs over spreadsheet grids. */
+.sheet-tabs{position:sticky;top:60px;z-index:6;display:flex;gap:2px;margin:0;padding:6px 8px 0;overflow-x:auto;background:var(--surface-2);border:1px solid var(--line);border-bottom:0;border-radius:var(--r) var(--r) 0 0;scrollbar-width:none}
+.sheet-tabs::-webkit-scrollbar{display:none}
+.sheet-tab{flex-shrink:0;display:inline-flex;align-items:center;gap:8px;padding:9px 18px;margin-bottom:-1px;border:1px solid transparent;border-bottom:0;border-radius:var(--r-sm) var(--r-sm) 0 0;color:var(--ink-2);font:600 14px var(--font);text-decoration:none;white-space:nowrap}
+.sheet-tab:hover{background:var(--surface);color:var(--brand)}
+.sheet-tab[aria-selected="true"]{background:var(--surface);border-color:var(--line);color:var(--brand);box-shadow:inset 0 3px 0 var(--brand)}
+.tab-count{padding:0 6px;border-radius:4px;background:var(--neutral-bg);color:var(--muted);font-size:11.5px;font-weight:600}
+.sheet-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-bottom:0}
 .sheet-filter{display:flex;align-items:center;gap:8px;flex:0 1 320px;min-width:200px;height:34px;padding:0 10px;border:1px solid #d3dce1;border-radius:var(--r-sm);background:var(--surface);color:var(--faint)}
 .sheet-filter:focus-within{border-color:var(--brand);box-shadow:var(--ring)}
 .sheet-filter input{flex:1;min-width:0;border:0;outline:0;background:transparent;font:13px var(--font);color:var(--ink)}
-.sheet-toggle{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);cursor:pointer}
-.sheet-toggle[hidden]{display:none}
+.sheet-toggle,.contact-sort{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);cursor:pointer}
+.sheet-toggle[hidden],.contact-sort[hidden]{display:none}
+.contact-sort select{height:32px;padding:0 8px;border:1px solid #d3dce1;border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font:13px var(--font)}
 .sheet-status{font-size:12.5px;color:var(--muted)}
 .sheet-copy{margin-left:auto;min-height:32px;padding:0 12px;font-size:12.5px}
 .sheet-copy.copied{color:var(--good);border-color:var(--good)}
-.detail-sections>.sheet-panel,.detail-sections{border-top:1px solid var(--line)}
-.workbook.is-tabbed .detail-sections{border-top:0}
-.workbook.is-tabbed:not(.show-all) .sheet-panel{border-top:0}
-.workbook.is-tabbed:not(.show-all) .sheet-caption{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-.workbook.show-all .detail-sections>.sheet-panel:first-child{border-top:0}
-.workbook.show-all .sheet-panel.no-match{display:none}
-.sheet-caption{display:flex;align-items:center;gap:8px;margin:0;padding:10px 14px;font:700 13.5px var(--font-head);background:var(--surface-2);border-bottom:1px solid var(--line)}
-.sheet-caption .section-count{margin-left:auto;font-family:var(--font);font-weight:500}
-/* A sheet with two tables (Contact information) labels each one. */
-.sheet-subcaption{display:flex;align-items:center;gap:8px;margin:0;padding:9px 14px;background:var(--surface);border-bottom:1px solid var(--line);color:var(--ink-2);font:700 11.5px var(--font);letter-spacing:.5px;text-transform:uppercase}
-.sheet-grid+.sheet-subcaption{border-top:1px solid var(--line)}
+.detail-sections{padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:0 0 var(--r) var(--r);box-shadow:var(--shadow-sm)}
+.sheet-panel+.sheet-panel{margin-top:22px}
+.workbook.is-tabbed .sheet-panel+.sheet-panel{margin-top:0}
+.sheet-caption{display:flex;align-items:center;gap:8px;margin:0 0 10px;font:700 15px var(--font-head)}
+.sheet-caption .section-count{font-family:var(--font);font-weight:500}
+.workbook.is-tabbed .sheet-caption{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .sheet-panel .empty-filter{margin:0}
-.sheet-panel .compact-empty{margin:16px}
-/* The grid scrolls inside the page so its header row and first columns stay in view. */
-.sheet-grid{overflow:auto;max-height:max(360px,calc(100vh - 230px))}
-.workbook.show-all .sheet-grid{max-height:none}
-.sheet-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;counter-reset:row}
-.sheet-table th,.sheet-table td{padding:7px 10px;border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2);vertical-align:top;text-align:left}
-.sheet-table thead th{position:sticky;top:0;z-index:2;background:var(--surface-2);border-bottom:1px solid var(--line);color:var(--ink-2);font-size:11.5px;letter-spacing:.3px;text-transform:uppercase}
-.sheet-table thead th[data-sort]{padding:0}
-.sheet-table tbody tr:last-child>*{border-bottom:0}
-.sheet-table tbody tr:hover>*{background:var(--brand-50)}
-.sheet-table tbody tr[hidden]{display:none}
-.sort-btn{display:flex;align-items:center;gap:6px;width:100%;padding:8px 10px;border:0;background:none;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;text-align:left;cursor:pointer;white-space:nowrap}
-.sort-btn:hover{color:var(--brand)}
-.sort-btn::after{content:"";width:0;height:0;border:4px solid transparent;border-top-color:var(--faint);margin-top:4px;opacity:.55}
-th[aria-sort="ascending"] .sort-btn::after{border-top-color:transparent;border-bottom-color:var(--brand);margin:-4px 0 0;opacity:1}
-th[aria-sort="descending"] .sort-btn::after{border-top-color:var(--brand);opacity:1}
-th[aria-sort] .sort-btn{color:var(--brand)}
-/* Row numbers, like a spreadsheet's left margin; they follow the visible order. */
-.sheet-table .row-num{position:sticky;left:0;z-index:1;width:42px;min-width:42px;padding:7px 6px;background:var(--surface-2);color:var(--faint);font:600 11.5px/19.5px var(--mono);text-align:center}
-.sheet-table thead .row-num{z-index:3}
-.sheet-table tbody tr:not([hidden]){counter-increment:row}
-.sheet-table tbody .row-num::before{content:counter(row)}
-.sheet-table tbody tr:hover>.row-num{background:var(--brand-100);color:var(--brand)}
-/* The first data column stays in view while scrolling sideways. */
-.sheet-table tbody>tr>:nth-child(2),.sheet-table thead th:nth-child(2){position:sticky;left:42px;z-index:1;background:var(--surface);box-shadow:1px 0 0 var(--line)}
-.sheet-table thead th:nth-child(2){z-index:3;background:var(--surface-2)}
-.sheet-table td a{text-decoration:none}
-.sheet-table td a:hover{text-decoration:underline}
-.sheet-table td a+a{margin-left:8px}
-.sheet-table td.is-empty,.sheet-table .value-empty{color:var(--faint)}
-.contact-table td{min-width:120px;max-width:320px;color:var(--ink-2);overflow-wrap:anywhere}
-.contact-table td.kind-email,.contact-table td.kind-phone{white-space:nowrap;max-width:none;overflow-wrap:normal}
-.contact-table td.kind-address{min-width:220px}
-.contact-table .icon-btn{width:22px;height:22px}
-.contact-name{min-width:190px;max-width:260px}
-.contact-name strong{color:var(--ink);font-weight:600}
-.contact-name .unnamed{color:var(--muted)}
-.row-values{margin-top:4px}
-.row-values summary{font-size:12px;font-weight:600;color:var(--brand);cursor:pointer}
-.row-values .field-list{padding-top:4px}
-.field-table .field-label{width:26%;min-width:170px;font-weight:600;color:var(--ink);text-transform:none;letter-spacing:0;font-size:13px;white-space:normal}
-.field-table td{color:var(--ink);white-space:pre-line;overflow-wrap:anywhere}
-.field-table td.kind-address{line-height:1.55}
-.field-table .col-source{width:160px;white-space:nowrap}
-.field-table tr.is-empty .field-label{color:var(--muted);font-weight:500}
+.xl-title{display:flex;align-items:center;gap:8px;margin:20px 0 8px;font:700 14px var(--font-head)}
+.xl-hint{font:500 12px var(--font);color:var(--muted)}
+/* The grid scrolls inside its own frame; the page never scrolls sideways. */
+/* Grids fit the page width, so the page itself scrolls and the header rows can stay pinned under the
+   top bar and sheet tabs (--xl-top is set by app.js). position:relative keeps screen-reader text inside. */
+.xl-scroll{position:relative;max-width:100%;border:1px solid #cfd6db;border-radius:4px;background:var(--surface)}
+.xl-scroll[hidden]{display:none}
+.xl-grid{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;counter-reset:row}
+.xl-grid th,.xl-grid td{padding:6px 10px;border-right:1px solid #e1e6e9;border-bottom:1px solid #e1e6e9;vertical-align:top;text-align:left;font-size:13px;letter-spacing:0;text-transform:none;white-space:normal;overflow-wrap:anywhere;background:var(--surface);color:var(--ink)}
+.xl-grid tr[hidden],.xl-grid [data-col][hidden]{display:none}
+/* Column letters and row numbers, drawn from what is shown. */
+.xl-grid thead tr{counter-reset:col}
+.xl-grid thead th{position:sticky;top:var(--xl-top,0px);z-index:4;height:24px;padding:3px 8px;background:#eef1f3;border-bottom:1px solid #cfd6db;color:var(--muted);font:600 11.5px var(--mono);text-align:center}
+.xl-grid thead .xl-col:not([hidden]){counter-increment:col}
+.xl-grid thead .xl-col::before{content:counter(col,upper-alpha)}
+.xl-grid tbody tr:not([hidden]){counter-increment:row}
+.xl-grid .xl-row{width:38px;min-width:38px;padding:6px 4px;background:#eef1f3;border-right:1px solid #cfd6db;color:var(--muted);font:600 11.5px var(--mono);text-align:center}
+.xl-grid tbody .xl-row::before{content:counter(row)}
+.xl-grid .xl-corner{width:38px;min-width:38px}
+.xl-grid .xl-head>*{position:sticky;top:calc(var(--xl-top,0px) + 24px);z-index:3}
+/* The label column stays in view while scrolling sideways. */
+.xl-grid .field-label{min-width:150px;width:24%;color:var(--ink-2);font-weight:600}
+.xl-grid tbody tr:hover>td,.xl-grid tbody tr:hover>th{background:#f4faf9}
+.xl-grid tbody tr:hover>.xl-row{background:var(--brand-100);color:var(--brand)}
+/* Header row (row 1): bold, tinted, like a formatted Excel header. */
+.xl-grid .xl-head>th{background:var(--brand-50);color:var(--ink);font-weight:700}
+.sheet-panel>.xl-title:first-child{margin-top:0}
+.xl-grid .xl-group>th{padding:5px 10px;background:var(--surface-2);color:var(--muted);font:700 11px var(--font);letter-spacing:.5px;text-transform:uppercase}
+.xl-grid td a{margin-right:8px;text-decoration:none}
+.xl-grid td a:hover{text-decoration:underline}
+.xl-grid td.kind-address,.xl-grid td.kind-text{white-space:pre-line}
+.xl-grid tr.is-empty>.field-label,.xl-grid td.is-empty{color:var(--faint)}
+.xl-grid .value-empty{color:var(--faint)}
+.xl-grid .icon-btn{width:22px;height:22px;margin:-3px 0 0 -2px}
+.xl-fields .xl-source{width:150px;color:var(--faint);font-size:12px}
+/* Contacts: one column per contact, each wide enough for an email address. */
+/* Contacts: one contact per row. Fixed column shares fit the page; long values wrap inside the cell. */
+.xl-contacts{table-layout:fixed}
+.xl-contacts .xl-w-row{width:38px}
+.xl-contacts .xl-w-contact_type{width:10%}
+.xl-contacts .xl-w-name{width:12%}
+.xl-contacts .xl-w-job_position{width:11%}
+.xl-contacts .xl-w-email{width:23%}
+.xl-contacts .xl-w-phone{width:11%}
+.xl-contacts .xl-w-landline_no{width:9%}
+.xl-contacts .xl-w-address{width:17%}
+.xl-contacts .xl-w-notes{width:7%}
+.xl-contacts .xl-head>th{white-space:normal}
+.xl-contacts td,.xl-contacts .xl-head>th{padding:6px 8px;font-size:12.5px;overflow-wrap:break-word}
+.xl-contacts td a{margin-right:6px}
+.xl-contacts .xl-c-name strong{font-weight:600}
+.xl-contacts .xl-c-name .unnamed{color:var(--muted);font-weight:500}
+.xl-contacts .xl-c-address{font-size:12.5px;line-height:1.45}
+.xl-contacts .row-values summary{font-size:12px;font-weight:600;color:var(--brand);cursor:pointer}
+.xl-contacts .row-values .field-list{padding:6px 0 0;grid-template-columns:1fr}
 .section-count{font-size:12px;color:var(--muted);white-space:nowrap}
 
 /* Field lists (company sections, "differs" details) */
@@ -496,8 +502,6 @@ tr.row-flag td{background:var(--warn-bg)}
   .result-row{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}
   .result-count{grid-column:1/-1;justify-self:start}
 }
-@media(max-width:900px){
-}
 @media(max-width:720px){
   .topbar{flex-wrap:wrap;height:auto;gap:6px 12px;padding:8px 14px 0}
   .account-greeting{display:none}
@@ -519,10 +523,24 @@ tr.row-flag td{background:var(--warn-bg)}
   .key-facts>div{padding:0;border-left:0}
   .field-list{grid-template-columns:1fr;padding:2px 14px 8px}
   .field-list>.field:nth-last-child(2):not(.field-wide):nth-child(odd){border-bottom:1px solid var(--line-2)}
-  .sheet-tabs{top:0;position:static}
+  .sheet-tabs{top:0;position:static;padding:4px 4px 0}
+  .sheet-tabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr}
+  .sheet-tab{flex-direction:column;gap:2px;padding:7px 6px;font-size:13px;line-height:1.25;white-space:normal;text-align:center}
   .sheet-filter{flex:1 1 100%}
-  .sheet-grid{max-height:70vh}
-  .field-table .field-label{min-width:130px}
+  .detail-sections{padding:8px}
+  .xl-grid .field-label{min-width:110px}
+  /* Contacts stack on phones: each row becomes a block of "Label  value" lines. */
+  .xl-contacts,.xl-contacts tbody{display:block}
+  .xl-contacts colgroup,.xl-contacts thead,.xl-contacts .xl-head{display:none}
+  .xl-contacts tr.xl-contact-row{display:block;position:relative;padding:8px 12px 8px 44px;border-bottom:1px solid #cfd6db}
+  .xl-contacts tr.xl-contact-row[hidden]{display:none}
+  .xl-contacts tr.xl-contact-row:last-child{border-bottom:0}
+  .xl-contacts tr.xl-contact-row>.xl-row{position:absolute;left:0;top:0;bottom:0;width:34px;min-width:0;padding-top:10px;border-bottom:0}
+  .xl-contacts tr.xl-contact-row>td:not(.xl-row){display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;padding:4px 0;border:0;background:none}
+  .xl-contacts tr.xl-contact-row>td:not(.xl-row)::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:600}
+  .xl-contacts tr.xl-contact-row>td.xl-c-name{font-size:14px}
+  .workbook.hide-empty .xl-contacts td.is-empty{display:none!important}
+  .xl-contacts tbody tr:hover>td{background:none}
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .dash-grid,.import-grid,.form-grid{grid-template-columns:1fr}
   .dash-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}

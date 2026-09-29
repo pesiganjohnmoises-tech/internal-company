@@ -33,6 +33,13 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE","0")=="1",
                   MAX_CONTENT_LENGTH=16*1024*1024)
 csrf=CSRFProtect(app)
+@app.url_defaults
+def static_version(endpoint,values):
+    """Static links carry the file's modification time (?v=...), so browsers fetch a changed CSS/JS file
+    instead of a cached copy."""
+    if endpoint=="static" and "filename" in values and "v" not in values:
+        try: values["v"]=int((ROOT/"static"/values["filename"]).stat().st_mtime)
+        except OSError: pass
 # Rotated at 1 MB with 3 old files kept, so the log cannot fill the disk; the activity panel reads the current file.
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s",
                     handlers=[RotatingFileHandler(ROOT/"app.log",maxBytes=1024*1024,backupCount=3,encoding="utf-8")])

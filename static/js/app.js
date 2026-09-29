@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// Company page workbook: sheet tabs, row filter, column sort, hide-empty and copy-as-TSV.
+// Company page: sheet tabs, filter, hide-empty rows, contact order and copy-as-TSV.
 document.addEventListener('DOMContentLoaded', () => {
   const book = document.getElementById('workbook');
   if (!book) return;
@@ -17,38 +17,65 @@ document.addEventListener('DOMContentLoaded', () => {
   const panels = [...book.querySelectorAll('.sheet-panel')];
   const filter = document.getElementById('sheet-filter');
   const hideEmpty = document.getElementById('hide-empty');
-  const hideWrap = document.getElementById('hide-empty-wrap');
   const status = document.getElementById('sheet-status');
   const copy = document.getElementById('sheet-copy');
-  // A cell's visible value: screen-reader text and the empty-value dash are left out.
+  const sortWrap = document.getElementById('contact-sort-wrap');
+  // A cell's visible value: screen-reader text, the empty-value dash and buttons are left out.
   const cellText = cell => {
-    const main = (cell.querySelector('.cell-main') || cell).cloneNode(true);
-    main.querySelectorAll('.sr-only, .value-empty, button').forEach(x => x.remove());
+    const main = cell.cloneNode(true);
+    main.querySelectorAll('.sr-only, .value-empty, button, summary').forEach(x => x.remove());
     return main.textContent.replace(/\s+/g, ' ').trim();
   };
   book.classList.add('is-tabbed');
+  // Grid header rows pin just below whatever stays pinned above them: the top bar, and the sheet tabs
+  // where they are sticky (not on phones).
+  const tabStrip = book.querySelector('.sheet-tabs');
+  const setTop = () => {
+    const bar = document.querySelector('.topbar');
+    let top = bar && getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0;
+    if (getComputedStyle(tabStrip).position === 'sticky') top += tabStrip.offsetHeight;
+    book.style.setProperty('--xl-top', top + 'px');
+  };
+  setTop();
+  window.addEventListener('resize', setTop);
   let active = [];
+
+  // A row stays when it matches; a group heading stays while any of its rows does.
+  // Field sheets have one field per row, the contacts sheet one contact per row.
+  const filterRows = (table, terms, noun) => {
+    let shown = 0;
+    const rows = [...table.querySelectorAll('tr[data-row]')];
+    rows.forEach(row => {
+      const keep = terms.every(t => row.textContent.toLowerCase().includes(t)) && !(hideEmpty.checked && row.classList.contains('is-empty'));
+      row.hidden = !keep;
+      if (keep) shown++;
+    });
+    table.querySelectorAll('tr[data-group]').forEach(g => {
+      g.hidden = !table.querySelector(`tr[data-in="${g.dataset.group}"]:not([hidden])`);
+    });
+    return [shown, rows.length, noun];
+  };
 
   const refresh = () => {
     const terms = filter.value.toLowerCase().split(/\s+/).filter(Boolean);
-    let shown = 0, total = 0;
+    // Stacked contact rows (phones) also drop their empty cells.
+    book.classList.toggle('hide-empty', hideEmpty.checked);
+    const parts = [];
     active.forEach(panel => {
-      const rows = [...panel.querySelectorAll('tbody tr')];
-      let visible = 0;
-      rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        const keep = terms.every(t => text.includes(t)) && !(hideEmpty.checked && row.classList.contains('is-empty'));
-        row.hidden = !keep;
-        if (keep) visible++;
+      let any = false, tables = 0;
+      panel.querySelectorAll('table.xl-grid').forEach(table => {
+        const r = filterRows(table, terms, table.classList.contains('xl-contacts') ? 'contact' : 'field');
+        table.closest('.xl-scroll').hidden = r[0] === 0 && terms.length > 0;
+        if (r[0]) any = true;
+        tables++;
+        parts.push(r);
       });
       const empty = panel.querySelector('.empty-filter');
-      if (empty) empty.hidden = visible > 0 || rows.length === 0;
-      // In "All fields", a section with no matching rows is left out entirely.
-      panel.classList.toggle('no-match', active.length > 1 && visible === 0);
-      shown += visible; total += rows.length;
+      if (empty) empty.hidden = any || !tables;
     });
-    status.textContent = total ? (shown === total ? `${total} row${total === 1 ? '' : 's'}` : `${shown} of ${total} rows`) : '';
-    copy.disabled = shown === 0;
+    const busy = terms.length || hideEmpty.checked;
+    status.textContent = busy ? parts.map(([s, t, k]) => `${s} of ${t} ${k}${t === 1 ? '' : 's'}`).join(' · ') : '';
+    copy.disabled = !parts.some(p => p[0]);
   };
 
   const select = (tab, focus) => {
@@ -57,11 +84,9 @@ document.addEventListener('DOMContentLoaded', () => {
       t.setAttribute('aria-selected', on);
       t.tabIndex = on ? 0 : -1;
     });
-    const ids = tab.getAttribute('aria-controls').split(/\s+/).filter(Boolean);
-    active = panels.filter(p => ids.includes(p.id));
+    active = panels.filter(p => p.id === tab.getAttribute('aria-controls'));
     panels.forEach(p => { p.hidden = !active.includes(p); });
-    book.classList.toggle('show-all', active.length > 1);
-    hideWrap.hidden = !active.some(p => p.querySelector('.field-row'));
+    if (sortWrap) sortWrap.hidden = !active.some(p => p.querySelector('.xl-contacts'));
     // Keep the selected tab in view when the tab strip scrolls sideways (phones).
     const strip = tab.parentNode;
     if (tab.offsetLeft < strip.scrollLeft || tab.offsetLeft + tab.offsetWidth > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = tab.offsetLeft - 8;
@@ -88,47 +113,39 @@ document.addEventListener('DOMContentLoaded', () => {
   filter.addEventListener('input', refresh);
   hideEmpty.addEventListener('change', refresh);
 
-  // Click a column header to sort; click again to reverse. Empty cells always sort last.
-  book.querySelectorAll('th[data-sort]').forEach(th => {
-    const button = document.createElement('button');
-    button.type = 'button'; button.className = 'sort-btn';
-    button.append(...th.childNodes);
-    th.append(button);
-    button.addEventListener('click', () => {
-      const table = th.closest('table');
-      const col = [...th.parentNode.children].indexOf(th);
-      const dir = th.getAttribute('aria-sort') === 'ascending' ? -1 : 1;
-      table.querySelectorAll('th[aria-sort]').forEach(x => x.removeAttribute('aria-sort'));
-      th.setAttribute('aria-sort', dir === 1 ? 'ascending' : 'descending');
-      const body = table.tBodies[0];
-      const value = row => { const c = row.children[col]; return cellText(c); };
-      [...body.rows].sort((a, b) => {
-        const x = value(a), y = value(b);
-        if (!x || !y) return (!x) - (!y);
-        return dir * x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
-      }).forEach(row => body.append(row));
-    });
+  // Contact order: as in the workbook, by name, or by contact type (empty types last).
+  const sort = document.getElementById('contact-sort');
+  if (sort) sort.addEventListener('change', () => {
+    const body = document.getElementById('contact-cards').tBodies[0];
+    const key = sort.value;
+    const by = row => key === 'index' ? '' : (row.dataset[key] || '');
+    [...body.querySelectorAll('tr[data-row]')].sort((a, b) => {
+      const x = by(a), y = by(b);
+      if (x !== y && (!x || !y)) return (!x) - (!y);
+      return x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' }) || a.dataset.index - b.dataset.index;
+    }).forEach(row => body.append(row));
   });
 
-  // Copy the visible rows (with headers) as tab-separated text, which pastes into Excel as cells.
+  // Copy what is shown as tab-separated text, which pastes into Excel as cells. Column letters and row
+  // numbers are left out; a blank line separates tables.
   copy.addEventListener('click', () => {
     if (!navigator.clipboard) return;
-    // Every table on the sheet, each with its header row; a blank line separates tables.
-    const clean = cells => cells.filter(c => !c.classList.contains('row-num')).map(cellText);
     const blocks = [];
-    active.forEach(panel => panel.querySelectorAll('table').forEach(table => {
-      const rows = [...table.tBodies[0].rows].filter(r => !r.hidden);
-      if (rows.length) blocks.push([table.tHead.rows[0], ...rows].map(r => clean([...r.cells]).join('\t')).join('\n'));
+    active.forEach(panel => panel.querySelectorAll('[data-copy-block]').forEach(table => {
+      if (table.closest('[hidden]')) return;
+      const lines = [...table.tBodies[0].rows].filter(r => !r.hidden && !r.classList.contains('xl-group'))
+        .map(r => [...r.querySelectorAll(':scope > [data-cell]')].filter(c => !c.hidden).map(cellText).join('\t'));
+      if (lines.length > 1) blocks.push(lines.join('\n'));
     }));
     navigator.clipboard.writeText(blocks.join('\n\n')).then(() => {
       const label = copy.querySelector('span');
       label.textContent = 'Copied';
       copy.classList.add('copied');
-      setTimeout(() => { label.textContent = 'Copy rows'; copy.classList.remove('copied'); }, 1400);
+      setTimeout(() => { label.textContent = 'Copy'; copy.classList.remove('copied'); }, 1400);
     });
   });
 
-  // Open the sheet named in the URL (#sec-contact), or the sheet holding the element it names
+  // Open the sheet named in the URL (#sec-contact), or the one holding the element it names
   // (#sec-contacts), else the first one.
   const fromHash = () => {
     if (location.hash.length < 2) return null;

@@ -78,7 +78,7 @@ for u,e in expect.items():
     if u in plan: check(f"{u}: restricted sales values absent from HTML",not [v for l,v in LABELS.items() if l not in e and f">{v}<" in html])
 # User company view shows every non-sales column Full Access sees (v7).
 import re
-def dts(html): return re.findall(r'(?:<dt>|<th scope="row" class="field-label">)([^<]*)',html)
+def dts(html): return re.findall(r'(?:<dt>|class="field-label">)([^<]*)',html)
 full_dts=dts(client("fulltest").get(f"/company/{sg}").data.decode())
 check("user company view: all non-sales columns of Full Access",dts(client("ann").get(f"/company/{sg}").data.decode())==[d for d in full_dts if d.strip() not in set(LABELS)-{"Kargosmart Sales"}])
 check("user company view: old sales header kept only as XLSX hint",">KG Sales<" in client("ann").get(f"/company/{sg}").data.decode())
@@ -563,11 +563,11 @@ gen=h[h.index('id="sec-general"'):h.index('id="sec-contact"')]; pay=h[h.index('i
 check("company: general sheet rows follow the requested order",[l for l in re.findall(r'class="field-label">([^<]*)<',gen)][:7]==["Agent ID Final","Alias","Company Name Entity","Country","State","City","Agent Status"])
 check("company: payment sheet rows follow the requested order",re.findall(r'class="field-label">([^<]*)<',pay)[:5]==["Payment Terms","Network","Network Expiry","KYC Status","Mapping Status"])
 check("company: every tab has its panel",len(tabs)==h.count('role="tabpanel"'))
-check("company: field sheets are tables with sortable headers",'class="sheet-table field-table"' in h and "data-sort" in h)
+check("company: sheets are spreadsheet grids, one row per contact",'class="xl-grid xl-fields"' in h and 'class="xl-grid xl-contacts"' in h and h.count('class="xl-contact-row"')==q("SELECT COUNT(*) FROM contacts WHERE company_id=?",st_id))
 check("company: copy buttons on contact email/phone",'data-copy=' in h)
 check("company: recently-viewed item is JSON-escaped",'<script type="application/json" id="recent-item">' in h and "</script>" in h.split('id="recent-item">')[1])
 con.execute("UPDATE contacts SET landline_no=NULL WHERE company_id=?",(st_id,)); con.commit()
-check("company: a contact column nobody fills in is hidden","<th>Landline No</th>" not in boss.get(f"/company/{st_id}").data.decode())
+check("company: a contact column nobody fills in is hidden",'class="field-label">Landline No<' not in boss.get(f"/company/{st_id}").data.decode())
 # Start page
 h=client("v8user","Brand-New-Pass-2026!").get("/search").data.decode()
 check("start page: one centred search, no country tiles or recently viewed",'class="home-form"' in h and 'name="q"' in h and "country-tiles" not in h and 'id="recent-list"' not in h)

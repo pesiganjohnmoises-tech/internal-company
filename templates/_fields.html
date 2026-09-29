@@ -3,7 +3,7 @@
 {%- elif v.links -%}{% for text,href in v.links %}{% if href %}<a href="{{href}}"{% if v.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{text}}</a>{% else %}<span>{{text}}</span>{% endif %}{% endfor %}
 {%- elif v.tone -%}<span class="badge {{v.tone}}">{{v.text}}</span>
 {%- elif v.same -%}<span class="value-same">{{v.text}}</span>
-{%- else -%}<span{% if v.raw %} title="Source value: {{v.raw}}"{% endif %}>{{v.text}}</span>{% if v.note %} <span class="badge bad">{{v.note}}</span>{% endif %}
+{%- else -%}<span{% if v.raw %} title="Source value: {{v.raw}}"{% endif %}>{{v.text}}</span>{% if v.note %} <span class="badge {{v.note_tone or 'bad'}}">{{v.note}}</span>{% endif %}
 {%- endif -%}
 {%- endmacro %}
 

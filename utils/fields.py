@@ -10,15 +10,20 @@ import re, json
 from datetime import datetime, date
 from utils.importer import column_map, norm
 
-SECTIONS=[("company","Company information"),("location","Location"),("commercial","Network & commercial"),("additional","Additional information")]
+SECTIONS=[("general","General information"),("contact","Contact information"),("payment","Payment term"),("additional","Additional information")]
 # Columns describing the person on a row; everything else describes the company.
 CONTACT_FIELDS=("name","contact_type","job_position","email","phone","landline_no","address")
-MAPPED_SECTIONS={"company_name":"company","country":"location","state":"location","city":"location","address":"location","network":"commercial"}
+MAPPED_SECTIONS={"company_name":"general","country":"general","state":"general","city":"general","address":"contact","network":"payment"}
 # Unmapped XLSX columns keyed by norm(header).
-EXTRA_SECTIONS={"agentidfinal":"company","alias":"company","agentstatus":"company","kycstatus":"company","mappingstatus":"company","sourceofagent":"company",
-                "paymentterms":"commercial","networkexpiry":"commercial","kgsales":"commercial","pcsales":"commercial","tisales":"commercial","kwsales":"commercial"}
-# "Street" (and other address aliases) is presented as Address; the XLSX header is kept as a hint.
-LABELS={"address":"Address",
+EXTRA_SECTIONS={"agentidfinal":"general","alias":"general","agentstatus":"general","sourceofagent":"general",
+                "kgsales":"contact","pcsales":"contact","tisales":"contact","kwsales":"contact",
+                "paymentterms":"payment","networkexpiry":"payment","kycstatus":"payment","mappingstatus":"payment"}
+# Row order within a section; fields not listed follow in workbook order.
+SECTION_ORDER={"general":["x_agentidfinal","x_alias","company_name","country","state","city","x_agentstatus"],
+               "contact":["x_kgsales","x_pcsales","x_tisales","x_kwsales","address"],
+               "payment":["x_paymentterms","network","x_networkexpiry","x_kycstatus","x_mappingstatus"]}
+# "Street" (and other address aliases) is presented as Street address; the XLSX header is kept as a hint.
+LABELS={"address":"Street address",
         # Sales display names (same as app.SALES_FIELDS); XLSX headers stay "KG Sales" etc.
         "x_kgsales":"Kargosmart Sales","x_pcsales":"Panda Cargo Sales","x_tisales":"Tri-Star Logistics Sales","x_kwsales":"KirinWorld Sales"}
 # Headers assumed for records imported before source_data was captured.
@@ -28,7 +33,7 @@ EMPTY={"","none","null","nan","nat"}
 EMAIL=re.compile(r"[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+")
 URL=re.compile(r"^(https?://|www\.)\S+$",re.I)
 DATE_FORMATS=("%d-%b-%Y","%d-%B-%Y","%b %d, %Y","%B %d, %Y","%d %b %Y","%Y-%m-%d","%d/%m/%Y")
-TONES={"good":{"active","approved","verified","completed","yes","mapped"},
+TONES={"good":{"active","approved","verified","completed","done","yes","mapped"},
        "warn":{"pending","in progress","under review","on hold"},
        "bad":{"inactive","rejected","suspended","blocked","terminated","expired"}}
 
@@ -109,7 +114,9 @@ def build_company_detail(company,contacts,can_view):
     sections=[]
     for sid,title in SECTIONS:
         fields=[field(k,h,company_value(k,h)) for k,h in company_cols if section_for(k)==sid]
-        if fields: sections.append({"id":sid,"title":title,"fields":fields,"filled":sum(not f["value"].get("empty") for f in fields)})
+        order=SECTION_ORDER.get(sid,[]); fields.sort(key=lambda f: order.index(f["key"]) if f["key"] in order else len(order))
+        # The contact sheet also holds the contacts table, so it is kept even without company fields.
+        if fields or sid=="contact": sections.append({"id":sid,"title":title,"fields":fields,"filled":sum(not f["value"].get("empty") for f in fields)})
     by_key={f["key"]:f for s in sections for f in s["fields"]}
     header={k:by_key[k] for k in ("x_agentidfinal","x_alias","x_agentstatus","network") if k in by_key and not by_key[k]["value"].get("empty")}
     cards=[]

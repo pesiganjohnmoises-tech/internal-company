@@ -17,7 +17,7 @@
     <form method="post" action="{{url_for('import_preview')}}" class="file-row" data-busy="Checking…">
       <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
       <span class="file-icon">XLS</span>
-      <div><strong>{{f}}</strong><small>Country detected from filename</small></div>
+      <div><strong>{{f}}</strong><small>{% if f in mapped_files %}Has its own mapped import below; this button replaces a whole country{% else %}Country detected from filename{% endif %}</small></div>
       <button class="secondary small" name="filename" value="{{f}}">Preview import</button>
     </form>
     {% else %}
@@ -35,6 +35,25 @@
     </form>
   </section>
 </div>
+{% for p in profiles %}
+<section class="admin-panel mapped-panel">
+  <h2>{{p.title}} <span class="count">mapped import</span></h2>
+  <p class="muted">{{p.description}} You review the column mapping, errors and every row before anything is saved.</p>
+  <div class="mapped-actions">
+    {% for f in profile_files[p.name] %}
+    <form method="post" action="{{url_for('mapped_upload',profile=p.name)}}" data-busy="Checking…">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <button class="primary" name="filename" value="{{f}}">Review data/{{f}} →</button>
+    </form>
+    {% endfor %}
+    <form method="post" enctype="multipart/form-data" action="{{url_for('mapped_upload',profile=p.name)}}" class="upload-form mapped-upload" data-busy="Checking…">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <label>Or upload a copy (.xlsx)<input type="file" name="file" accept=".xlsx" required></label>
+      <button class="secondary">Upload &amp; review →</button>
+    </form>
+  </div>
+</section>
+{% endfor %}
 <section class="admin-panel">
   <div class="section-head"><h2>Import history</h2></div>
   <div class="table-wrap">

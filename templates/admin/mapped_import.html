@@ -1,0 +1,180 @@
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}
+{% block title %}Review {{source}} · Internal Company Directory{% endblock %}
+{% block content %}
+{% set s=plan.summary %}
+{% set ACTIONS={"new_company":("New company","good"),"add_contact":("New contact","good"),"update_contact":("Update contact","warn"),
+  "duplicate_existing":("Already in directory · skipped","neutral"),"duplicate_file":("Duplicate row · skipped","neutral"),
+  "skip_existing":("Existing company · skipped","neutral"),"error":("Error · skipped" if opts.skip_invalid else "Error","bad")} %}
+{% set flagged=plan.rows|selectattr("errors")|list + plan.rows|rejectattr("errors")|selectattr("warnings")|list %}
+<div class="admin-head">
+  <div>
+    <div class="eyebrow">ADMINISTRATION / DATA / {{profile.title|upper}}</div>
+    <h1>Add {{source}} to {{plan.country}}?</h1>
+    <p class="muted">Nothing has changed yet. This preview reads <strong>{{source}}</strong> (sheet “{{plan.sheet}}”) through the <code>{{profile.name}}</code> mapping. Records are only added{% if opts.mode=='update' %} or updated{% endif %}; nothing is deleted.</p>
+  </div>
+</div>
+{{ admin_nav('imports_page') }}
+
+{% for i in plan.critical %}<div class="notice error" role="alert"><strong>Cannot import:</strong> {{i.text}}</div>{% endfor %}
+{% if not name_matches %}<div class="notice warn" role="status">The file name does not look like the file this mapping was made for. The columns are still checked below.</div>{% endif %}
+{% if s.errors and not opts.skip_invalid and not plan.critical %}<div class="notice error" role="status"><strong>{{s.errors}} row{{'s' if s.errors!=1}} with errors block the import.</strong> Fix them in the workbook and upload it again, or choose below how to handle them.</div>{% endif %}
+{% if not plan.country_exists %}<p class="notice success" role="status">{{plan.country}} is not in the directory yet; it will be added as a new country.</p>{% endif %}
+
+<div class="stats import-stats">
+  <div class="stat"><span>Total rows</span><strong>{{s.total}}</strong></div>
+  <div class="stat"><span>Valid rows</span><strong>{{s.valid}}</strong></div>
+  <div class="stat"><span>Contacts to add</span><strong>{{s.new_contacts}}</strong></div>
+  <div class="stat"><span>New companies</span><strong>{{s.new_companies}}</strong></div>
+  {% if opts.mode=='update' %}<div class="stat"><span>Updates</span><strong class="smallstat">{{s.update_companies}} companies · {{s.update_contacts}} contacts</strong></div>{% endif %}
+  <div class="stat"><span>Duplicates</span><strong>{{s.duplicates}}</strong></div>
+  <div class="stat"><span>Skipped rows</span><strong>{{s.skipped}}</strong></div>
+  <div class="stat"><span>Errors</span><strong{% if s.errors %} class="text-bad"{% endif %}>{{s.errors}}</strong></div>
+  <div class="stat"><span>Rows with warnings</span><strong>{{s.warnings}}</strong></div>
+</div>
+
+<section class="admin-panel">
+  <h2>Import options</h2>
+  <form method="get" action="{{url_for('mapped_review',profile=profile.name)}}" class="mapped-options">
+    <input type="hidden" name="pending" value="{{pending}}">
+    <fieldset>
+      <legend>Companies already in {{plan.country}} ({{s.existing_companies}} in this file)</legend>
+      {% for key,label in modes.items() %}
+      <label class="check-line"><input type="radio" name="mode" value="{{key}}" {% if opts.mode==key %}checked{% endif %}> <span>{{label}}{% if key=='add' %} <span class="muted">(default)</span>{% endif %}</span></label>
+      {% endfor %}
+      {% if opts.mode=='update' %}<p class="notice warn">Update overwrites stored values with the file's values for {{s.update_companies}} compan{{'y' if s.update_companies==1 else 'ies'}} and {{s.update_contacts}} contact{{'s' if s.update_contacts!=1}}. Blank cells in the file never erase a stored value. A database backup is made first.</p>{% endif %}
+    </fieldset>
+    <fieldset>
+      <legend>Rows with problems</legend>
+      <label class="check-line"><input type="checkbox" name="fill_down" value="1" {% if opts.fill_down %}checked{% endif %}> Rows without a company name belong to the company on the row above</label>
+      <label class="check-line"><input type="checkbox" name="skip_invalid" value="1" {% if opts.skip_invalid %}checked{% endif %}> Skip rows that still have errors and import the rest</label>
+    </fieldset>
+    <button class="secondary">Update preview</button>
+  </form>
+</section>
+
+<section class="admin-panel">
+  <details {% if plan.mapping|selectattr('review')|list or plan.critical %}open{% endif %}>
+    <summary><h2 class="inline-h2">Column mapping <span class="count">{{plan.mapping|length}}</span></h2></summary>
+    <p class="muted">Configured in <code>utils/import_profiles/{{profile.name}}.json</code>. Columns are matched by name, ignoring case, spaces and punctuation.</p>
+    <div class="table-wrap">
+      <table class="mapping-table">
+        <thead><tr><th>Col</th><th>Excel column</th><th>System field</th><th>How it is used</th><th>Review</th></tr></thead>
+        <tbody>
+          {% for m in plan.mapping %}
+          <tr{% if m.unknown or not m.found %} class="row-flag"{% endif %}>
+            <td class="nowrap">{{m.letter or '—'}}</td>
+            <td>{% if m.excel %}{{m.excel}}{% else %}<span class="badge bad">Not found</span> {{m.header}}{% endif %}</td>
+            <td>{% if m.field %}<code>{{m.field}}</code>{% if m.required %} <span class="badge warn">required</span>{% endif %}{% elif m.stored %}<span class="muted">detail field</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>{% if m.unknown %}Not imported{% elif m.field=='country' %}Checked: must be {{plan.country}}{% elif m.field %}Database column{% else %}Company page: “{{m.header}}”{% endif %}{% if m.check and m.check!='country' %}<span class="cell-sub">Checked as {{m.check}}</span>{% endif %}</td>
+            <td>{% if m.review %}<span class="badge warn">Review</span> {{m.review}}{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+{% if plan.issues|selectattr('level','equalto','warning')|list %}
+<section class="admin-panel">
+  <h2>File warnings</h2>
+  <ul class="name-list">{% for i in plan.issues if i.level=='warning' %}<li>{{i.text}}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{% if flagged %}
+<section class="admin-panel">
+  <details {% if s.errors %}open{% endif %}>
+    <summary><h2 class="inline-h2">Rows to check <span class="count">{{flagged|length}}</span></h2></summary>
+    <div class="table-wrap tall-table">
+      <table>
+        <thead><tr><th>Row</th><th>Company</th><th>Contact</th><th>Action</th><th>Issues</th></tr></thead>
+        <tbody>
+          {% for r in flagged %}{% set a=ACTIONS[r.action] %}
+          <tr>
+            <td class="nowrap">{{r.row}}</td>
+            <td>{{r.vals.company_name or '—'}}</td>
+            <td>{{r.vals.name or '—'}}{% if r.vals.email %}<span class="cell-sub">{{r.vals.email}}</span>{% endif %}</td>
+            <td><span class="badge {{a[1]}}">{{a[0]}}</span></td>
+            <td><ul class="issue-list">{% for e in r.errors %}<li class="text-bad">{{e}}</li>{% endfor %}{% for w in r.warnings %}<li>{{w}}</li>{% endfor %}</ul></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+{% endif %}
+
+{% set new=plan.companies.values()|selectattr('status','equalto','new')|list %}
+{% set old=plan.companies.values()|selectattr('status','equalto','existing')|list %}
+<section class="admin-panel">
+  <details>
+    <summary><h2 class="inline-h2">Companies <span class="count">{{new|length}} new · {{old|length}} existing</span></h2></summary>
+    <p class="muted">A company's record takes the values of its first row, as in the standard import; every contact keeps its own row's values.</p>
+    <div class="table-wrap tall-table">
+      <table>
+        <thead><tr><th>Company</th><th>Status</th><th>Rows</th><th>Differs between rows</th></tr></thead>
+        <tbody>
+          {% for c in new+old %}
+          <tr>
+            <td>{% if c.id %}<a href="{{url_for('company',company_id=c.id)}}">{{c.name}}</a>{% else %}{{c.name}}{% endif %}</td>
+            <td><span class="badge {{'good' if c.status=='new' else 'neutral'}}">{{'New' if c.status=='new' else 'Already in directory'}}</span></td>
+            <td>{{c.rows|length}}</td>
+            <td>{{c.differs|join(', ') or '—'}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if partial and new %}
+    <p class="notice error" role="status"><strong>{{partial|length}} user{{'s' if partial|length!=1}} will not see the new companies</strong> because they are granted {{plan.country}} company by company:
+      {% for u in partial %}<a href="{{url_for('user_edit',uid=u.id)}}">{{u.username}}</a>{{', ' if not loop.last}}{% endfor %}.</p>
+    {% endif %}
+  </details>
+</section>
+
+<section class="admin-panel">
+  <details>
+    <summary><h2 class="inline-h2">All rows <span class="count">{{plan.rows|length}}</span></h2></summary>
+    <div class="table-wrap tall-table">
+      <table>
+        <thead><tr><th>Row</th><th>Company</th><th>Contact</th><th>Email</th><th>City / State</th><th>Network</th><th>Action</th></tr></thead>
+        <tbody>
+          {% for r in plan.rows %}{% set a=ACTIONS[r.action] %}
+          <tr>
+            <td class="nowrap">{{r.row}}</td>
+            <td>{{r.vals.company_name or '—'}}</td>
+            <td>{{r.vals.name or '—'}}{% if r.vals.job_position %}<span class="cell-sub">{{r.vals.job_position}}</span>{% endif %}</td>
+            <td>{{r.vals.email or '—'}}</td>
+            <td>{{[r.vals.city,r.vals.state]|select|join(', ') or '—'}}</td>
+            <td>{{r.vals.network or '—'}}</td>
+            <td><span class="badge {{a[1]}}">{{a[0]}}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<div class="save-bar">
+  <span class="muted">{% if plan.blocked %}Resolve the errors above to enable the import.{% else %}One transaction: if anything fails, nothing is saved. A database backup is made first.{% endif %}</span>
+  <div class="save-actions">
+    <form method="post" action="{{url_for('import_discard')}}">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <input type="hidden" name="pending" value="{{pending}}">
+      <button class="secondary">Cancel</button>
+    </form>
+    <form method="post" action="{{url_for('mapped_confirm',profile=profile.name)}}" data-busy="Importing…">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <input type="hidden" name="pending" value="{{pending}}">
+      <input type="hidden" name="plan" value="{{plan.hash}}">
+      <input type="hidden" name="mode" value="{{opts.mode}}">
+      {% if opts.fill_down %}<input type="hidden" name="fill_down" value="1">{% endif %}
+      {% if opts.skip_invalid %}<input type="hidden" name="skip_invalid" value="1">{% endif %}
+      <button class="primary" {% if plan.blocked %}disabled{% endif %}>Import {{s.new_contacts+s.update_contacts}} row{{'s' if s.new_contacts+s.update_contacts!=1}} into {{plan.country}}</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

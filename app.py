@@ -1,4 +1,4 @@
-import os, re, io, csv, sqlite3, logging, secrets, time, hashlib, hmac, subprocess, unicodedata
+import os, re, io, csv, sqlite3, logging, secrets, time, hashlib, hmac, subprocess, unicodedata, shutil
 from functools import wraps
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 from flask_wtf.csrf import CSRFProtect
 from utils.importer import import_workbook, column_map, detect_country, backfill_source_data, agent_id_from_source, utcnow
 from utils.fields import build_company_detail
-from utils import dashboard
+from utils import dashboard, profile_import
 from utils.status import agent_status, country_code
 
 ROOT=Path(__file__).resolve().parent
@@ -546,7 +546,7 @@ def preview_import(path,source,country,confirm):
         partial=[] if not cid else c.execute("""SELECT u.id,u.username FROM users u JOIN user_country_access a ON a.user_id=u.id
             WHERE a.country_id=? AND a.all_companies=0 AND u.role='USER' ORDER BY u.username COLLATE NOCASE""",(cid["id"],)).fetchall()
         stale=next((f for f in dashboard.import_health(c,DATA)["stale"] if f["name"]==source),None) if "filename" in confirm else None
-    return render_template("admin/import_preview.html",r=result,source=source,partial=partial,stale=stale,confirm=confirm)
+    return render_template("admin/import_preview.html",r=result,source=source,partial=partial,stale=stale,confirm=confirm,mapped=profile_import.profile_for(source))
 @app.route("/admin/imports",methods=["GET","POST"])
 @admin_required
 def imports_page():
@@ -567,7 +567,10 @@ def imports_page():
     files=sorted(p.name for p in DATA.glob("*.xlsx"))
     with db() as c: history=c.execute("SELECT * FROM imports ORDER BY id DESC LIMIT 30").fetchall()
     backups=[{"name":b.name,"size":b.stat().st_size} for b in sorted(BACKUPS.glob("directory-*.db"),reverse=True)] if BACKUPS.exists() else []
-    return render_template("admin/imports.html",files=files,history=history,backups=backups)
+    profiles=profile_import.profiles()
+    profile_files={p["name"]:[f for f in files if re.match(p["file_pattern"],f,re.I)] for p in profiles}
+    return render_template("admin/imports.html",files=files,history=history,backups=backups,profiles=profiles,profile_files=profile_files,
+                           mapped_files={f for fs in profile_files.values() for f in fs})
 def seed_path(filename):
     path=(DATA/filename).resolve()
     if path.parent!=DATA.resolve() or path.suffix.lower()!=".xlsx" or not path.exists(): abort(400)
@@ -600,6 +603,75 @@ def import_discard():
     if PENDING.fullmatch(request.form.get("pending","")): (IMPORTS/request.form["pending"]).unlink(missing_ok=True)
     flash("Import cancelled. Nothing was changed.","success")
     return redirect(url_for("imports_page"))
+# Mapped imports (utils/profile_import.py): workbooks in another layout, read through a JSON mapping profile.
+# They only add to a country; the standard import above is unchanged.
+def mapped_profile(name):
+    try: return profile_import.load_profile(name)
+    except KeyError: abort(404)
+def mapped_options(form):
+    mode=form.get("mode","add")
+    return {"mode":mode if mode in profile_import.MODES else "add","fill_down":form.get("fill_down")=="1","skip_invalid":form.get("skip_invalid")=="1"}
+def mapped_pending(name):
+    if not PENDING.fullmatch(name or "") or not (IMPORTS/name).exists(): abort(400)
+    return IMPORTS/name
+@app.post("/admin/imports/mapped/<profile>/upload")
+@admin_required
+def mapped_upload(profile):
+    p=mapped_profile(profile); seed=request.form.get("filename")
+    if seed:
+        src=seed_path(seed); name=src.name
+    else:
+        uploaded=request.files.get("file")
+        if not uploaded or not uploaded.filename.lower().endswith(".xlsx"):
+            flash("Choose a valid .xlsx file.","error"); return redirect(url_for("imports_page"))
+        name=secure_filename(uploaded.filename)
+        if not name or ".." in name: abort(400)
+    # The file under review is a private copy, so a change to data/ cannot alter what was previewed.
+    dest=IMPORTS/(secrets.token_hex(6)+"_"+name)
+    if seed: shutil.copyfile(src,dest)
+    else: uploaded.save(dest)
+    logging.info("Admin %s started mapped import profile=%s file=%s",current_user()["username"],p["name"],name)
+    return redirect(url_for("mapped_review",profile=p["name"],pending=dest.name))
+@app.get("/admin/imports/mapped/<profile>/review")
+@admin_required
+def mapped_review(profile):
+    p=mapped_profile(profile); path=mapped_pending(request.args.get("pending")); opts=mapped_options(request.args)
+    try: plan=profile_import.analyze(path,DB,p,**opts)
+    except Exception as e:
+        logging.warning("Mapped import preview failed profile=%s file=%s: %s",p["name"],path.name,e)
+        path.unlink(missing_ok=True)
+        flash(f"{path.name[13:]} cannot be read: {e}","error"); return redirect(url_for("imports_page"))
+    with db() as c:
+        cid=c.execute("SELECT id FROM countries WHERE name=? COLLATE NOCASE",(p["country"],)).fetchone()
+        partial=[] if not cid else c.execute("""SELECT u.id,u.username FROM users u JOIN user_country_access a ON a.user_id=u.id
+            WHERE a.country_id=? AND a.all_companies=0 AND u.role='USER' ORDER BY u.username COLLATE NOCASE""",(cid["id"],)).fetchall()
+    return render_template("admin/mapped_import.html",plan=plan,profile=p,pending=path.name,source=path.name[13:],opts=opts,
+                           modes=profile_import.MODES,partial=partial,name_matches=bool(re.match(p["file_pattern"],path.name[13:],re.I)))
+@app.post("/admin/imports/mapped/<profile>/confirm")
+@admin_required
+def mapped_confirm(profile):
+    p=mapped_profile(profile); path=mapped_pending(request.form.get("pending")); opts=mapped_options(request.form)
+    source=path.name[13:]; label=f"{source} ({p['title']})"
+    back=redirect(url_for("mapped_review",profile=p["name"],pending=path.name,mode=opts["mode"],fill_down="1" if opts["fill_down"] else None,skip_invalid="1" if opts["skip_invalid"] else None))
+    try: backup=backup_db(p["country"]+"-mapped")
+    except Exception:
+        logging.exception("Backup before mapped import failed file=%s",source)
+        flash("Import cancelled: the database backup could not be written, so nothing was changed.","error"); return back
+    try: done=profile_import.apply(path,DB,p,request.form.get("plan",""),path.name,**opts)
+    except profile_import.StalePlan as e:
+        flash(f"{e} Nothing was imported; check the updated preview and confirm again.","error"); return back
+    except Exception as e:
+        logging.exception("Mapped import failed profile=%s file=%s",p["name"],source)
+        with db() as c: c.execute("INSERT INTO imports(source_file,country,status,errors_found,imported_at) VALUES(?,?,?,?,?)",(label,p["country"],"FAILED",1,now()))
+        flash(f"Import failed and was rolled back; nothing was changed. {e}","error"); return back
+    s=done["summary"]; r=done["result"]
+    with db() as c:
+        c.execute("INSERT INTO imports(source_file,country,status,records_processed,records_imported,duplicates_found,errors_found,imported_at) VALUES(?,?,?,?,?,?,?,?)",
+                  (label,p["country"],"COMPLETED",s["total"],r["new_contacts"]+r["update_contacts"],s["duplicates"],s["errors"],now()))
+    logging.info("Admin %s mapped import profile=%s file=%s mode=%s rows=%s valid=%s new_companies=%s new_contacts=%s updated_companies=%s updated_contacts=%s duplicates=%s skipped=%s errors=%s backup=%s",
+                 current_user()["username"],p["name"],source,opts["mode"],s["total"],s["valid"],r["new_companies"],r["new_contacts"],r["update_companies"],r["update_contacts"],s["duplicates"],s["skipped"],s["errors"],backup)
+    path.unlink(missing_ok=True)
+    return render_template("admin/mapped_import_done.html",plan=done,profile=p,source=source,backup=backup,opts=opts,modes=profile_import.MODES)
 @app.route("/admin/database")
 @admin_required
 def database_status():

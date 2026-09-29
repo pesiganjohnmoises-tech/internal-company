@@ -61,7 +61,10 @@ document.addEventListener('DOMContentLoaded', () => {
     active = panels.filter(p => ids.includes(p.id));
     panels.forEach(p => { p.hidden = !active.includes(p); });
     book.classList.toggle('show-all', active.length > 1);
-    hideWrap.hidden = active.every(p => p.classList.contains('contacts-section'));
+    hideWrap.hidden = !active.some(p => p.querySelector('.field-row'));
+    // Keep the selected tab in view when the tab strip scrolls sideways (phones).
+    const strip = tab.parentNode;
+    if (tab.offsetLeft < strip.scrollLeft || tab.offsetLeft + tab.offsetWidth > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = tab.offsetLeft - 8;
     if (focus) tab.focus();
     refresh();
   };
@@ -110,22 +113,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // Copy the visible rows (with headers) as tab-separated text, which pastes into Excel as cells.
   copy.addEventListener('click', () => {
     if (!navigator.clipboard) return;
-    const lines = [];
-    active.forEach(panel => {
-      const table = panel.querySelector('table');
-      if (!table) return;
-      const clean = cells => cells.filter(c => !c.classList.contains('row-num')).map(cellText);
-      const head = clean([...table.tHead.rows[0].cells]);
-      if (active.length > 1) head.unshift('Section');
-      if (!lines.length) lines.push(head.join('\t'));
-      const title = panel.querySelector('.sheet-caption').firstChild.textContent.trim();
-      [...table.tBodies[0].rows].filter(r => !r.hidden).forEach(r => {
-        const cells = clean([...r.cells]);
-        if (active.length > 1) cells.unshift(title);
-        lines.push(cells.join('\t'));
-      });
-    });
-    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    // Every table on the sheet, each with its header row; a blank line separates tables.
+    const clean = cells => cells.filter(c => !c.classList.contains('row-num')).map(cellText);
+    const blocks = [];
+    active.forEach(panel => panel.querySelectorAll('table').forEach(table => {
+      const rows = [...table.tBodies[0].rows].filter(r => !r.hidden);
+      if (rows.length) blocks.push([table.tHead.rows[0], ...rows].map(r => clean([...r.cells]).join('\t')).join('\n'));
+    }));
+    navigator.clipboard.writeText(blocks.join('\n\n')).then(() => {
       const label = copy.querySelector('span');
       label.textContent = 'Copied';
       copy.classList.add('copied');
@@ -133,9 +128,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Open the sheet named in the URL (e.g. #sec-contact), else the first one.
-  const fromHash = () => location.hash.length > 1 && (tabs.find(t => t.getAttribute('href') === location.hash)
-    || tabs.find(t => !t.hasAttribute('data-all') && t.getAttribute('aria-controls') === location.hash.slice(1)));
+  // Open the sheet named in the URL (#sec-contact), or the sheet holding the element it names
+  // (#sec-contacts), else the first one.
+  const fromHash = () => {
+    if (location.hash.length < 2) return null;
+    const target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    return tabs.find(t => t.getAttribute('href') === location.hash)
+      || (target && tabs.find(t => document.getElementById(t.getAttribute('aria-controls'))?.contains(target)));
+  };
   select(fromHash() || tabs[0]);
   window.addEventListener('hashchange', () => { const t = fromHash(); if (t) select(t); });
 });

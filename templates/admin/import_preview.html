@@ -11,6 +11,7 @@
 </div>
 {{ admin_nav('imports_page') }}
 
+{% if mapped %}<div class="notice error" role="status"><strong>{{source}} has its own mapped import ({{mapped.title}}).</strong> This standard import would replace all of {{r.country}} with this file. To add its records to {{mapped.country}} instead, cancel and use “{{mapped.title}}” on the Excel imports page.</div>{% endif %}
 {% if stale %}<div class="notice error" role="status"><strong>data/{{source}} is older than the live {{r.country}} data.</strong> {{r.country}} was last loaded from an uploaded workbook; importing this file would replace it with older data.</div>{% endif %}
 {% if ch.removed %}<div class="notice error" role="status"><strong>{{ch.removed|length}} compan{{'y' if ch.removed|length==1 else 'ies'}} will be removed</strong>, together with {{'its' if ch.removed|length==1 else 'their'}} contacts and any user access to {{'it' if ch.removed|length==1 else 'them'}}.</div>{% endif %}
 

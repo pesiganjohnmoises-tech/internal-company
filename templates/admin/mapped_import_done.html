@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}
+{% block title %}Import complete · Internal Company Directory{% endblock %}
+{% block content %}
+{% set s=plan.summary %}{% set r=plan.result %}
+<div class="admin-head">
+  <div>
+    <div class="eyebrow">ADMINISTRATION / DATA / {{profile.title|upper}}</div>
+    <h1>{{source}} imported into {{plan.country}}</h1>
+    <p class="muted">Mode: {{modes[opts.mode]|lower}}. The import is recorded in the import history and in <code>app.log</code>. Backup saved as <code>{{backup}}</code>.</p>
+  </div>
+</div>
+{{ admin_nav('imports_page') }}
+<div class="stats import-stats">
+  <div class="stat"><span>Total rows</span><strong>{{s.total}}</strong></div>
+  <div class="stat"><span>Valid rows</span><strong>{{s.valid}}</strong></div>
+  <div class="stat"><span>Imported rows</span><strong>{{r.new_contacts+r.update_contacts}}</strong></div>
+  <div class="stat"><span>New companies</span><strong>{{r.new_companies}}</strong></div>
+  <div class="stat"><span>New contacts</span><strong>{{r.new_contacts}}</strong></div>
+  {% if opts.mode=='update' %}<div class="stat"><span>Updated</span><strong class="smallstat">{{r.update_companies}} companies · {{r.update_contacts}} contacts</strong></div>{% endif %}
+  <div class="stat"><span>Skipped rows</span><strong>{{s.skipped}}</strong></div>
+  <div class="stat"><span>Duplicate rows</span><strong>{{s.duplicates}}</strong></div>
+  <div class="stat"><span>Errors</span><strong>{{s.errors}}</strong></div>
+</div>
+{% set new=plan.companies.values()|selectattr('status','equalto','new')|list %}
+{% if new %}
+<section class="admin-panel">
+  <details {% if new|length<=15 %}open{% endif %}>
+    <summary><h2 class="inline-h2">New companies <span class="count">{{new|length}}</span></h2></summary>
+    <ul class="name-list">{% for c in new %}<li>{{c.name}}</li>{% endfor %}</ul>
+  </details>
+</section>
+{% endif %}
+<p><a class="primary" href="{{url_for('imports_page')}}">Back to Excel imports</a> <a class="secondary" href="{{url_for('search',country=plan.country)}}">Browse {{plan.country}}</a></p>
+{% endblock %}

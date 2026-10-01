@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% from "_fields.html" import value, field_list %}{% from "_icons.html" import icon %}
+{% from "_fields.html" import value %}{% from "_icons.html" import icon %}
+{% block wrap_class %} wrap-wide{% endblock %}
 {% block title %}{{company.company_name if 'company_name' in fields or user.role in ('ADMIN','FULL_ACCESS') else 'Record'}} · Directory{% endblock %}
 {% block content %}
 {% set h=detail.header %}{% set by=detail.by_key %}
@@ -28,23 +29,19 @@
   </dl>
 </header>
 
-{# Spreadsheet grids. Column letters (A, B, C…) and row numbers are drawn by CSS counters, so they follow
-   whatever is shown after filtering and sorting, as in Excel. #}
+{# Spreadsheet grids: a bold header row, then one row per field. #}
 {% macro field_grid(s) -%}
 <div class="xl-scroll">
   <table class="xl-grid xl-fields" data-copy-block aria-labelledby="sec-{{s.id}}-title">
-    <thead><tr><th class="xl-corner" aria-hidden="true"></th><th class="xl-col" aria-hidden="true"></th><th class="xl-col" aria-hidden="true"></th><th class="xl-col col-optional" aria-hidden="true"></th></tr></thead>
     <tbody>
-      <tr class="xl-head"><td class="xl-row" aria-hidden="true"></td><th scope="col" data-cell>Field</th><th scope="col" data-cell>Value</th><th scope="col" class="col-optional" data-cell>XLSX column</th></tr>
+      <tr class="xl-head"><th scope="col" data-cell>Field</th><th scope="col" data-cell>Value</th></tr>
       {% for g in s.groups %}
-      <tr class="xl-group" data-group="{{s.id}}-{{loop.index}}"><td class="xl-row" aria-hidden="true"></td><th colspan="3" scope="colgroup">{{g.title}}</th></tr>
+      <tr class="xl-group" data-group="{{s.id}}-{{loop.index}}"><th colspan="2" scope="colgroup">{{g.title}}</th></tr>
       {% set gid=s.id ~ '-' ~ loop.index %}
       {% for f in g.fields %}
       <tr class="xl-field{% if f.value.empty %} is-empty{% endif %}" data-row data-in="{{gid}}">
-        <td class="xl-row" aria-hidden="true"></td>
         <th scope="row" data-cell class="field-label">{{f.label}}</th>
         <td class="kind-{{f.kind}}" data-cell>{{ value(f.value) }}</td>
-        <td class="xl-source col-optional" data-cell>{{f.source or ''}}</td>
       </tr>
       {% endfor %}
       {% endfor %}
@@ -84,37 +81,31 @@
       {% if s.id=='contact' %}
       <h3 class="xl-title" id="sec-contacts">Contacts <span class="count">{{detail.contacts|length}}</span> <span class="xl-hint">one row per contact</span></h3>
       {% if detail.contacts %}
-      {# One contact per row. Columns: Contact Type, Name, then fields.CONTACT_ORDER; Notes only when needed. #}
+      {# One contact per row. Columns: Contact Type, Name, then fields.CONTACT_ORDER; then an Admin column (source row) for admins. #}
       {% set type_cols=detail.contact_columns|selectattr('0','equalto','contact_type')|list %}
       {% set cols=detail.contact_columns|rejectattr('0','equalto','contact_type')|list %}
-      {% set notes=detail.contacts|selectattr('differs')|list or (user.role=='ADMIN' and detail.contacts|selectattr('source_row')|list) %}
+      {% set notes=user.role=='ADMIN' and detail.contacts|selectattr('source_row')|list %}
       {% macro contact_cell(c,key,label) -%}
       {% set f=c.by_key[key] %}
       <td class="xl-c-{{key}} kind-{{f.kind}}{{' is-empty' if f.value.empty}}" data-cell data-label="{{label}}"><span class="xl-v">{{ value(f.value) }}{% if f.kind in ('email','phone') and not f.value.empty %}<button type="button" class="icon-btn" data-copy="{{f.value.links|map('first')|join(', ') if f.value.links else f.value.text}}" aria-label="Copy {{label|lower}} of {{c.name}}">{{icon('copy',13)}}</button>{% endif %}</span></td>
       {%- endmacro %}
       <div class="xl-scroll">
         <table class="xl-grid xl-contacts" id="contact-cards" data-copy-block>
-          <colgroup><col class="xl-w-row">{% for k,l in type_cols %}<col class="xl-w-contact_type">{% endfor %}<col class="xl-w-name">{% for k,l in cols %}<col class="xl-w-{{k}}">{% endfor %}{% if notes %}<col class="xl-w-notes">{% endif %}</colgroup>
-          <thead><tr><th class="xl-corner" aria-hidden="true"></th>{% for k,l in type_cols %}<th class="xl-col" aria-hidden="true"></th>{% endfor %}<th class="xl-col" aria-hidden="true"></th>{% for k,l in cols %}<th class="xl-col" aria-hidden="true"></th>{% endfor %}{% if notes %}<th class="xl-col" aria-hidden="true"></th>{% endif %}</tr></thead>
+          <colgroup>{% for k,l in type_cols %}<col class="xl-w-contact_type">{% endfor %}<col class="xl-w-name">{% for k,l in cols %}<col class="xl-w-{{k}}">{% endfor %}{% if notes %}<col class="xl-w-admin">{% endif %}</colgroup>
           <tbody>
             <tr class="xl-head">
-              <td class="xl-row" aria-hidden="true"></td>
               {% for k,label in type_cols %}<th scope="col" data-cell>{{label}}</th>{% endfor %}
               <th scope="col" data-cell class="field-label">Name</th>
               {% for k,label in cols %}<th scope="col" data-cell class="field-label">{{label}}</th>{% endfor %}
-              {% if notes %}<th scope="col" data-cell>Notes</th>{% endif %}
+              {% if notes %}<th scope="col" data-cell>Admin</th>{% endif %}
             </tr>
             {% for c in detail.contacts %}{% set t=c.by_key.get('contact_type') %}
             <tr class="xl-contact-row" data-row data-index="{{loop.index0}}" data-name="{{c.name}}" data-type="{{t.value.text if t and not t.value.empty else ''}}">
-              <td class="xl-row" aria-hidden="true"></td>
               {% for k,label in type_cols %}{{ contact_cell(c,k,label) }}{% endfor %}
               <td class="xl-c-name" data-cell data-label="Name"><strong{% if not c.named %} class="unnamed"{% endif %}>{{c.name}}</strong></td>
               {% for k,label in cols %}{{ contact_cell(c,k,label) }}{% endfor %}
               {% if notes %}
-              <td class="xl-c-notes{{' is-empty' if not c.differs and not (user.role=='ADMIN' and c.source_row)}}" data-cell data-label="Notes"><span class="xl-v">
-                {% if c.differs %}<details class="row-values"><summary>Differs from company record ({{c.differs|length}})</summary>{{ field_list(c.differs, "compact-list") }}</details>{% endif %}
-                {% if user.role=='ADMIN' and c.source_row %}<span class="cell-sub">Source row {{c.source_row}}</span>{% endif %}
-              </span></td>
+              <td class="xl-c-admin{{' is-empty' if not c.source_row}}" data-cell data-label="Admin"><span class="xl-v">{% if c.source_row %}<span class="cell-sub">Source row {{c.source_row}}</span>{% endif %}</span></td>
               {% endif %}
             </tr>
             {% endfor %}
@@ -130,6 +121,6 @@
     {% endfor %}
   </div>
 </div>
-{% if not detail.has_source %}<p class="tiny">Only the core fields are available for this record. Re-import its workbook to capture all XLSX columns.</p>{% endif %}
+{% if not detail.has_source %}<p class="tiny">Only the core fields are available for this record. Re-import its workbook to capture all columns.</p>{% endif %}
 <script type="application/json" id="recent-item">{{ {"id":company.id,"name":company.company_name if can_name else "Company record","country":company.country,"agent":agent_id,"place":place}|tojson }}</script>
 {% endblock %}

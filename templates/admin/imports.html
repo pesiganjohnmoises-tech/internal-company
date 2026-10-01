@@ -17,8 +17,12 @@
     <form method="post" action="{{url_for('import_preview')}}" class="file-row" data-busy="Checking…">
       <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
       <span class="file-icon">XLS</span>
-      <div><strong>{{f}}</strong><small>{% if f in mapped_files %}Has its own mapped import below; this button replaces a whole country{% else %}Country detected from filename{% endif %}</small></div>
+      {% if f in mapped_files %}
+      <div><strong>{{f}}</strong><small>Has its own mapped import below</small></div>
+      {% else %}
+      <div><strong>{{f}}</strong><small>Country detected from filename</small></div>
       <button class="secondary small" name="filename" value="{{f}}">Preview import</button>
+      {% endif %}
     </form>
     {% else %}
     <p class="muted">No source workbooks found in data/.</p>
@@ -54,6 +58,38 @@
   </div>
 </section>
 {% endfor %}
+<section class="admin-panel" aria-labelledby="countries-title">
+  <div class="section-head"><h2 id="countries-title">Countries</h2></div>
+  <p class="muted">Deleting a country removes its companies, their contacts and every user's access to them. A backup of the whole database is saved first.</p>
+  <div class="table-wrap">
+    <table class="country-table">
+      <thead><tr><th>Country</th><th>Companies</th><th>Contacts</th><th>Source file</th><th><span class="sr-only">Delete</span></th></tr></thead>
+      <tbody>
+        {% for c in countries %}
+        <tr>
+          <td><strong>{{c.name}}</strong></td>
+          <td>{{c.companies}}</td>
+          <td>{{c.contacts}}</td>
+          <td>{{c.source_file|source_name or '—'}}</td>
+          <td>
+            <details class="country-delete">
+              <summary class="danger small">Delete</summary>
+              <form method="post" action="{{url_for('country_delete',country_id=c.id)}}" class="country-delete-form">
+                <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+                <p>This permanently removes {{c.companies}} compan{{'y' if c.companies==1 else 'ies'}} and {{c.contacts}} contact{{'' if c.contacts==1 else 's'}}. A backup is saved first.</p>
+                <label>Type the country name to confirm<input name="confirm_name" autocomplete="off" required placeholder="{{c.name}}"></label>
+                <button class="danger">Delete country</button>
+              </form>
+            </details>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="table-empty">No countries yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 <section class="admin-panel">
   <div class="section-head"><h2>Import history</h2></div>
   <div class="table-wrap">

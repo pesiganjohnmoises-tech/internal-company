@@ -34,7 +34,7 @@
     {"header": "Landline No",         "field": "landline_no", "check": "phone"},
     {"header": "Street",              "field": "address"},
     {"header": "Notes",               "keep": true,
-     "review": "New column; the current India workbook has no Notes. It is kept and shown on the company page under “Additional information”, visible to every user who can open the company. Set \"keep\": false here to leave it out."}
+     "review": "New column; the current India workbook has no Notes. It is kept per contact and shown on the company page as the Notes column of the contacts table, visible to every user who can open the company. Set \"keep\": false here to leave it out."}
   ],
   "legal_suffixes": ["pvt", "private", "ltd", "limited", "llp", "plc", "inc", "pte", "co"],
   "states": ["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana",

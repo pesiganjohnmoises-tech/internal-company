@@ -14,7 +14,9 @@ SECTIONS=[("general","General information"),("contact","Contact information"),("
 # Columns describing the person on a row; everything else describes the company.
 CONTACT_FIELDS=("name","contact_type","job_position","email","phone","landline_no","address")
 # Order of the contact rows on the company page (Name is placed by the template, after Contact Type).
-CONTACT_ORDER=["contact_type","name","job_position","email","phone","landline_no","address"]
+CONTACT_ORDER=["contact_type","name","job_position","email","phone","landline_no","address","x_sourceofagent","x_notes"]
+# Per-contact columns of the indiav2 layout: shown after the street address even when every contact leaves them blank.
+CONTACT_EXTRA=[("x_sourceofagent","Source of Agent"),("x_notes","Notes")]
 MAPPED_SECTIONS={"company_name":"general","country":"general","state":"general","city":"general","address":"contact","network":"payment"}
 # Unmapped XLSX columns keyed by norm(header).
 EXTRA_SECTIONS={"agentidfinal":"general","alias":"general","agentstatus":"general","sourceofagent":"general",
@@ -118,8 +120,11 @@ def build_company_detail(company,contacts,can_view):
     can_view(key) applies the existing per-user field permissions."""
     source=load(company["source_data"])
     cols=[(k,h) for k,h in columns(list(source) or LEGACY_HEADERS) if can_view(k)]
-    company_cols=[(k,h) for k,h in cols if k not in CONTACT_FIELDS or k=="address"]
+    # Notes describe the contact on its row, so they are shown in the contacts table only.
+    company_cols=[(k,h) for k,h in cols if (k not in CONTACT_FIELDS or k=="address") and k!="x_notes"]
     contact_cols=[(k,h) for k,h in cols if k in CONTACT_FIELDS and k!="name"]
+    heads=dict(cols)
+    contact_cols+=[(k,heads.get(k,h)) for k,h in CONTACT_EXTRA if can_view(k)]
     def company_value(k,h): return source.get(h) if k.startswith("x_") else company[k]
     sections=[]
     for sid,title in SECTIONS:
@@ -139,19 +144,16 @@ def build_company_detail(company,contacts,can_view):
     for n,ct in enumerate(contacts,start=1):
         row=load(ct["source_data"]); fields=[]
         for k,h in contact_cols:
-            f=field(k,h,ct[k])
-            # Contact rows usually repeat the company address; say so instead of repeating it.
-            if k=="address" and not is_empty(company["address"]) and same(ct["address"],company["address"]):
-                f["value"]={"text":"Same as company address","same":True}
-            fields.append(f)
-        # Company-level columns filled on this source row with a value other than the company record's.
-        # Blank cells are not differences: sheets often fill company columns on the first row only.
-        differs=[field(k,h,row.get(h)) for k,h in company_cols if k!="address" and source and not is_empty(row.get(h)) and not same(row.get(h),source.get(h))]
+            # Source of Agent falls back to the company value; Notes belong to this row only.
+            if k=="x_sourceofagent": fields.append(field(k,h,row.get(h) if not is_empty(row.get(h)) else source.get(h)))
+            elif k.startswith("x_"): fields.append(field(k,h,row.get(h)))
+            else: fields.append(field(k,h,ct[k]))
         name=ct["name"] if can_view("name") and not is_empty(ct["name"]) else None
         search=" ".join(str(ct[k]) for k in CONTACT_FIELDS if can_view(k) and not is_empty(ct[k])).lower()
         cards.append({"id":ct["id"],"name":name or f"Contact {n}","named":bool(name),"initials":initials(name) if name else "#",
-                      "fields":fields,"by_key":{f["key"]:f for f in fields},"differs":differs,"source_row":ct["source_row"],"search":search})
-    # Contact rows: only those the user may see and at least one contact fills in, in CONTACT_ORDER.
-    contact_columns=[(k,LABELS.get(k,h)) for k,h in contact_cols if any(not c["by_key"][k]["value"].get("empty") for c in cards)]
+                      "fields":fields,"by_key":{f["key"]:f for f in fields},"source_row":ct["source_row"],"search":search})
+    # Contact rows: only those the user may see and at least one contact fills in (or CONTACT_EXTRA), in CONTACT_ORDER.
+    always={k for k,h in CONTACT_EXTRA}
+    contact_columns=[(k,LABELS.get(k,h)) for k,h in contact_cols if k in always or any(not c["by_key"][k]["value"].get("empty") for c in cards)]
     contact_columns.sort(key=lambda kh: CONTACT_ORDER.index(kh[0]) if kh[0] in CONTACT_ORDER else len(CONTACT_ORDER))
     return {"sections":sections,"header":header,"contacts":cards,"contact_columns":contact_columns,"has_source":bool(source),"by_key":by_key}

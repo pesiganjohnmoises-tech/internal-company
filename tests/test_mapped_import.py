@@ -76,8 +76,8 @@ check("skip-existing mode leaves existing companies out",xl["new_contacts"]==111
 h=adm.get("/admin/imports").data.decode()
 check("imports page offers the mapped review for data/indiav2.xlsx",'value="indiav2.xlsx">Review data/indiav2.xlsx' in h)
 check("standard data/ row warns that it replaces a country","Has its own mapped import below" in h)
-h=adm.post("/admin/imports/preview",data={"filename":"indiav2.xlsx"}).data.decode()
-check("standard preview of indiav2.xlsx points to the mapped import","has its own mapped import" in h)
+h=adm.post("/admin/imports/preview",data={"filename":"indiav2.xlsx"},follow_redirects=True).data.decode()
+check("standard preview of indiav2.xlsx is refused and points to the mapped import","has its own mapped import" in h and "<h1>Replace " not in h)
 r=adm.post("/admin/imports/mapped/indiav2/upload",data={"filename":"indiav2.xlsx"})
 check("review starts from a private copy",r.status_code==302 and len(pending())==1)
 pend=pending()[0]
@@ -124,6 +124,17 @@ check("company page renders the imported record",">Notes<" in h and 'class="fiel
 d=build_company_detail(con.execute("SELECT co.*,cn.name country FROM companies co JOIN countries cn ON cn.id=co.country_id WHERE co.id=?",(aero["id"],)).fetchone(),con.execute("SELECT * FROM contacts WHERE company_id=?",(aero["id"],)).fetchall(),lambda k: k not in A.SALES_FIELDS)
 check("sales columns still follow sales permissions",not any(f["key"] in A.SALES_FIELDS for s_ in d["sections"] for f in s_["fields"]))
 check("search finds an imported company",b"Aerotrans" in adm.get("/search?q=Aerotrans").data)
+# Source of Agent and Notes: contact columns after Street address; Notes per row, not on the company sheets.
+noted=[r for r in con.execute("SELECT * FROM contacts WHERE source_file LIKE '%indiav2.xlsx'") if (json.loads(r["source_data"]).get("Notes") or "").strip()]
+nc=noted[0]; note=json.loads(nc["source_data"])["Notes"].strip()
+d=build_company_detail(con.execute("SELECT co.*,cn.name country FROM companies co JOIN countries cn ON cn.id=co.country_id WHERE co.id=?",(nc["company_id"],)).fetchone(),con.execute("SELECT * FROM contacts WHERE company_id=?",(nc["company_id"],)).fetchall(),lambda k: True)
+cols=[k for k,l in d["contact_columns"]]
+check("contacts: Source of Agent then Notes right after Street address",cols[cols.index("address")+1:cols.index("address")+3]==["x_sourceofagent","x_notes"])
+check("contacts: each row shows its own Notes",next(c for c in d["contacts"] if c["id"]==nc["id"])["by_key"]["x_notes"]["value"].get("text")==note)
+check("contacts: Notes not repeated on the company sheets",not any(f["key"]=="x_notes" for s_ in d["sections"] for f in s_["fields"]))
+check("contacts: Notes of one row not copied to rows that leave it blank",all(c["by_key"]["x_notes"]["value"].get("empty") for c in d["contacts"] if not (json.loads(con.execute("SELECT source_data FROM contacts WHERE id=?",(c["id"],)).fetchone()[0]).get("Notes") or "").strip()))
+h=adm.get(f"/company/{nc['company_id']}").data.decode()
+check("company page: Notes column header and value, admin column renamed",'class="field-label">Notes<' in h and note in h and '<th scope="col" data-cell>Admin</th>' in h)
 again=P.analyze(TMP/"data/indiav2.xlsx",A.DB,prof,fill_down=True)["summary"]
 check("importing the same file again adds nothing",again["new_contacts"]==0 and again["new_companies"]==0 and again["duplicates"]==154)
 

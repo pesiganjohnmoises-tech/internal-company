@@ -126,8 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }).forEach(row => body.append(row));
   });
 
-  // Copy what is shown as tab-separated text, which pastes into Excel as cells. Column letters and row
-  // numbers are left out; a blank line separates tables.
+  // Copy what is shown as tab-separated text, which pastes into Excel as cells; a blank line separates tables.
   copy.addEventListener('click', () => {
     if (!navigator.clipboard) return;
     const blocks = [];

@@ -43,7 +43,7 @@
     </details>
     {% endif %}
   </header>
-  <main class="wrap" id="main-content">
+  <main class="wrap{% block wrap_class %}{% endblock %}" id="main-content">
     {% with messages=get_flashed_messages(with_categories=true) %}
       {% for category,message in messages %}<div class="notice {{category}}" role="status">{{message}}</div>{% endfor %}
     {% endwith %}

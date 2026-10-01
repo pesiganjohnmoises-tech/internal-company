@@ -93,7 +93,8 @@ import re
 def dts(html): return re.findall(r'(?:<dt>|class="field-label">)([^<]*)',html)
 full_dts=dts(client("fulltest").get(f"/company/{sg}").data.decode())
 check("user company view: all non-sales columns of Full Access",dts(client("ann").get(f"/company/{sg}").data.decode())==[d for d in full_dts if d.strip() not in set(LABELS)-{"Kargosmart Sales"}])
-check("user company view: old sales header kept only as XLSX hint",">KG Sales<" in client("ann").get(f"/company/{sg}").data.decode())
+ann_html=client("ann").get(f"/company/{sg}").data.decode()
+check("user company view: no XLSX column, no placeholder or differs note","XLSX column" not in ann_html and "Same as company address" not in ann_html and "Differs from company record" not in ann_html)
 
 # --- Search matches what the company page shows (v8) ---------------------------------------------------
 network=q("SELECT network FROM companies WHERE network IS NOT NULL AND network<>'' LIMIT 1")
@@ -569,6 +570,8 @@ hu=client("v8user","Brand-New-Pass-2026!").get(f"/company/{st_id}").data.decode(
 check("company: record number and source file are admin-only","Record #" in h and "Record #" not in hu and "Source row" not in hu)
 check("company: upload prefix removed from the source name",not re.search(r"[0-9a-f]{12}_\w+\.xlsx",h))
 tabs=re.findall(r'role="tab" id="tab-(\w+)"',h)
+heads=re.findall(r'<th scope="col" data-cell class="field-label">([^<]*)',h)
+check("company: Source of Agent and Notes columns follow Street address, shown even when empty","Street address" in heads and heads[heads.index("Street address")+1:heads.index("Street address")+3]==["Source of Agent","Notes"])
 check("company: General information, Contact information, Payment term tabs in that order",tabs[:3]==["general","contact","payment"])
 check("company: contacts table sits on the Contact information sheet",h.index('id="sec-contact"')<h.index('id="sec-contacts"')<h.index('id="sec-payment"'))
 gen=h[h.index('id="sec-general"'):h.index('id="sec-contact"')]; pay=h[h.index('id="sec-payment"'):]
@@ -597,6 +600,50 @@ check("create user page has no access section (it is set after creating)","card-
 check("tel link uses the first number only",A.tel_href("+65 8000 0001 / +65 8000 0002")=="tel:+6580000001" and A.tel_href("n/a")=="")
 check("mailto uses the first address only",A.first_email("a@x.example; b@y.example")=="a@x.example" and A.first_email("none")=="")
 
+# === Delete country ====================================================================================
+zid=con.execute("INSERT INTO countries(name) VALUES('Zz Delete Test')").lastrowid
+zco=[con.execute("INSERT INTO companies(country_id,company_name) VALUES(?,?)",(zid,f"Zz Co {i}")).lastrowid for i in (1,2)]
+for co_id,n in ((zco[0],2),(zco[1],1)):
+    for _ in range(n): con.execute("INSERT INTO contacts(company_id,name) VALUES(?,'Zz Person')",(co_id,))
+con.execute("INSERT INTO user_country_access(user_id,country_id,all_companies) VALUES(?,?,0)",(ids["ann"],zid))
+con.execute("INSERT INTO user_company_access(user_id,company_id) VALUES(?,?)",(ids["ann"],zco[0])); con.commit()
+others=lambda: con.execute("SELECT cn.name,COUNT(co.id) FROM countries cn LEFT JOIN companies co ON co.country_id=cn.id WHERE cn.id<>? GROUP BY cn.id ORDER BY cn.id",(zid,)).fetchall()
+before=[tuple(r) for r in others()]
+h=adm.get("/admin/imports").data.decode()
+row=h[h.index("<strong>Zz Delete Test</strong>"):]; row=row[:row.index("</tr>")]
+check("countries panel: each country with its companies and contacts","<td>2</td>" in row and "<td>3</td>" in row and "removes 2 companies and 3 contacts" in row and f"/admin/countries/{zid}/delete" in row)
+zcount=lambda: q("SELECT COUNT(*) FROM countries WHERE id=?",zid)+q("SELECT COUNT(*) FROM companies WHERE country_id=?",zid)
+r=adm.post(f"/admin/countries/{zid}/delete",data={"confirm_name":"Zz Delete"},follow_redirects=True).data.decode()
+check("delete country: wrong name deletes nothing",zcount()==3 and "Nothing was deleted" in r)
+adm.post(f"/admin/countries/{zid}/delete",data={})
+check("delete country: empty name deletes nothing",zcount()==3)
+check("delete country: Users and Full Access get 403",client("ann").post(f"/admin/countries/{zid}/delete",data={"confirm_name":"Zz Delete Test"}).status_code==403
+      and client("fulltest").post(f"/admin/countries/{zid}/delete",data={"confirm_name":"Zz Delete Test"}).status_code==403 and zcount()==3)
+A.app.config["WTF_CSRF_ENABLED"]=True
+r=adm.post(f"/admin/countries/{zid}/delete",data={"confirm_name":"Zz Delete Test"})
+A.app.config["WTF_CSRF_ENABLED"]=False
+check("delete country: missing CSRF token rejected",r.status_code==400 and zcount()==3)
+check("delete country: unknown id is 404",adm.post("/admin/countries/999999/delete",data={"confirm_name":"x"}).status_code==404)
+bk=set(A.BACKUPS.glob("*-Zz-Delete-Test-delete.db"))
+r=adm.post(f"/admin/countries/{zid}/delete",data={"confirm_name":"  zz delete test "},follow_redirects=True).data.decode()
+check("delete country: confirmed (case and spaces ignored) removes country and companies",zcount()==0 and "2 companies and 3 contacts removed" in r)
+check("delete country: contacts and access rows go too",q("SELECT COUNT(*) FROM contacts WHERE company_id IN (?,?)",*zco)==0
+      and q("SELECT COUNT(*) FROM user_country_access WHERE country_id=?",zid)==0 and q("SELECT COUNT(*) FROM user_company_access WHERE company_id IN (?,?)",*zco)==0)
+check("delete country: backup written first",len(set(A.BACKUPS.glob("*-Zz-Delete-Test-delete.db"))-bk)==1)
+check("delete country: other countries unchanged",[tuple(r) for r in others()]==before)
+check("delete country: logged","deleted country Zz Delete Test" in (TMP/"app.log").read_text(encoding="utf-8",errors="ignore"))
+# A workbook with a mapped profile can't create a country named after the file (indiav2.xlsx → "Indiav").
+import io
+n_before=q("SELECT COUNT(*) FROM countries")
+r=adm.post("/admin/imports",data={"file":(io.BytesIO((TMP/"data/singapore.xlsx").read_bytes()),"indiav2.xlsx")},content_type="multipart/form-data",follow_redirects=True).data.decode()
+check("standard upload of a mapped-profile file is refused without override","has its own mapped import" in r and not list((TMP/"imports").glob("*_indiav2.xlsx")))
+r=adm.post("/admin/imports",data={"file":(io.BytesIO((TMP/"data/singapore.xlsx").read_bytes()),"indiav2.xlsx"),"country":"Singapore"},content_type="multipart/form-data").data.decode()
+check("standard upload with a Country override still previews","Singapore" in r and "has its own mapped import" not in r.split("<main")[1][:400])
+adm.post("/admin/imports/discard",data={"pending":(list((TMP/"imports").glob("*_indiav2.xlsx")) or [Path("x")])[0].name})
+check("data/ seed of a mapped-profile file is refused",(not (TMP/"data/indiav2.xlsx").exists()) or ("has its own mapped import" in adm.post("/admin/imports/seed",data={"filename":"indiav2.xlsx"},follow_redirects=True).data.decode() and q("SELECT COUNT(*) FROM countries")==n_before))
+# An unclosed brace silently drops every later rule (login, admin, mobile layouts).
+css=re.sub(r"/\*.*?\*/","",(Path(__file__).resolve().parent.parent/"static/css/style.css").read_text(encoding="utf-8"),flags=re.S)
+check("style.css: braces are balanced",css.count("{")==css.count("}"))
 con.close()
 passed=sum(ok for _,ok in results)
 print(f"\n{passed}/{len(results)} passed  (temp copy: {TMP})")

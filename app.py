@@ -566,8 +566,10 @@ def imports_page():
             flash("Choose a valid .xlsx file.","error"); return redirect(url_for("imports_page"))
         name=secure_filename(uploaded.filename)
         if not name or ".." in name: abort(400)
+        override=(request.form.get("country") or "").strip()
+        if not override and mapped_refusal(name): return redirect(url_for("imports_page"))
         dest=IMPORTS/(secrets.token_hex(6)+"_"+name); uploaded.save(dest)
-        country=(request.form.get("country") or "").strip() or detect_country(name)
+        country=override or detect_country(name)
         page=preview_import(dest,name,country,{"action":url_for("import_upload_confirm"),"pending":dest.name,"country":country})
         if page: return page
         dest.unlink(missing_ok=True); return redirect(url_for("imports_page"))
@@ -575,12 +577,44 @@ def imports_page():
     for old in IMPORTS.glob("*.xlsx"):
         if time.time()-old.stat().st_mtime>86400: old.unlink(missing_ok=True)
     files=sorted(p.name for p in DATA.glob("*.xlsx"))
-    with db() as c: history=c.execute("SELECT * FROM imports ORDER BY id DESC LIMIT 30").fetchall()
+    with db() as c:
+        history=c.execute("SELECT * FROM imports ORDER BY id DESC LIMIT 30").fetchall()
+        countries=c.execute("""SELECT cn.id,cn.name,cn.source_file,COUNT(DISTINCT co.id) companies,COUNT(ct.id) contacts FROM countries cn
+            LEFT JOIN companies co ON co.country_id=cn.id LEFT JOIN contacts ct ON ct.company_id=co.id
+            GROUP BY cn.id ORDER BY cn.name COLLATE NOCASE""").fetchall()
     backups=[{"name":b.name,"size":b.stat().st_size} for b in sorted(BACKUPS.glob("directory-*.db"),reverse=True)] if BACKUPS.exists() else []
     profiles=profile_import.profiles()
     profile_files={p["name"]:[f for f in files if re.match(p["file_pattern"],f,re.I)] for p in profiles}
     return render_template("admin/imports.html",files=files,history=history,backups=backups,profiles=profiles,profile_files=profile_files,
-                           mapped_files={f for fs in profile_files.values() for f in fs})
+                           mapped_files={f for fs in profile_files.values() for f in fs},countries=countries)
+def mapped_refusal(filename):
+    """Workbooks with a mapped import profile go through it: the standard import would name a country
+    after the file (indiav2.xlsx → "Indiav"). Uploads with a Country override are not refused."""
+    p=profile_import.profile_for(filename)
+    if p: flash(f"{filename} has its own mapped import; use Mapped import below.","error")
+    return p
+@app.post("/admin/countries/<int:country_id>/delete")
+@admin_required
+def country_delete(country_id):
+    with db() as c:
+        cn=c.execute("SELECT name FROM countries WHERE id=?",(country_id,)).fetchone()
+        if not cn: abort(404)
+        companies=c.execute("SELECT COUNT(*) FROM companies WHERE country_id=?",(country_id,)).fetchone()[0]
+        contacts=c.execute("SELECT COUNT(*) FROM contacts WHERE company_id IN (SELECT id FROM companies WHERE country_id=?)",(country_id,)).fetchone()[0]
+    name=cn["name"]
+    if (request.form.get("confirm_name") or "").strip().casefold()!=name.strip().casefold():
+        flash(f"Type “{name}” to confirm. Nothing was deleted.","error"); return redirect(url_for("imports_page"))
+    try: backup=backup_db(f"{name}-delete")
+    except Exception:
+        logging.exception("Backup before country delete failed country=%s",name)
+        flash("Delete cancelled: the database backup could not be written, so nothing was changed.","error"); return redirect(url_for("imports_page"))
+    # One transaction. Contacts and user access rows go with their company/country (ON DELETE CASCADE).
+    with db() as c:
+        c.execute("DELETE FROM companies WHERE country_id=?",(country_id,))
+        c.execute("DELETE FROM countries WHERE id=?",(country_id,))
+    logging.info("Admin %s deleted country %s (id=%s) companies=%s contacts=%s backup=%s",current_user()["username"],name,country_id,companies,contacts,backup)
+    flash(f"{name} deleted: {companies} companies and {contacts} contacts removed. Backup saved as {backup}.","success")
+    return redirect(url_for("imports_page"))
 def seed_path(filename):
     path=(DATA/filename).resolve()
     if path.parent!=DATA.resolve() or path.suffix.lower()!=".xlsx" or not path.exists(): abort(400)
@@ -593,12 +627,13 @@ def pending_path():
 @admin_required
 def import_preview():
     filename=request.form.get("filename","")
+    if mapped_refusal(filename): return redirect(url_for("imports_page"))
     return preview_import(seed_path(filename),filename,detect_country(filename),{"action":url_for("import_seed"),"filename":filename}) or redirect(url_for("imports_page"))
 @app.post("/admin/imports/seed")
 @admin_required
 def import_seed():
     filename=request.form.get("filename","")
-    run_import(seed_path(filename),filename,detect_country(filename))
+    if not mapped_refusal(filename): run_import(seed_path(filename),filename,detect_country(filename))
     return redirect(url_for("imports_page"))
 @app.post("/admin/imports/upload/confirm")
 @admin_required

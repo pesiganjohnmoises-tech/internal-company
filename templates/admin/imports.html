@@ -23,6 +23,7 @@
       <div><strong>{{f}}</strong><small>Country detected from filename</small></div>
       <button class="secondary small" name="filename" value="{{f}}">Preview import</button>
       {% endif %}
+      <a class="secondary small" href="{{url_for('import_download',filename=f)}}" aria-label="Download {{f}}" download>{{icon('download',15)}} Download</a>
     </form>
     {% else %}
     <p class="muted">No source workbooks found in data/.</p>

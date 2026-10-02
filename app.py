@@ -3,7 +3,7 @@ from functools import wraps
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
-from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, Response, g
+from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, Response, g, send_file
 from markupsafe import Markup, escape
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -576,7 +576,8 @@ def imports_page():
     # Uploads previewed but never confirmed or cancelled are removed after a day.
     for old in IMPORTS.glob("*.xlsx"):
         if time.time()-old.stat().st_mtime>86400: old.unlink(missing_ok=True)
-    files=sorted(p.name for p in DATA.glob("*.xlsx"))
+    # "~$name.xlsx" is the lock file Excel leaves while a workbook is open, not a workbook.
+    files=sorted(p.name for p in DATA.glob("*.xlsx") if not p.name.startswith("~$"))
     with db() as c:
         history=c.execute("SELECT * FROM imports ORDER BY id DESC LIMIT 30").fetchall()
         countries=c.execute("""SELECT cn.id,cn.name,cn.source_file,COUNT(DISTINCT co.id) companies,COUNT(ct.id) contacts FROM countries cn
@@ -623,6 +624,15 @@ def pending_path():
     name=request.form.get("pending","")
     if not PENDING.fullmatch(name) or not (IMPORTS/name).exists(): abort(400)
     return IMPORTS/name
+@app.route("/admin/imports/download/<filename>")
+@admin_required
+def import_download(filename):
+    """The workbook in data/ exactly as stored. Admins only: it holds every company and column of its country."""
+    if filename.startswith("~$"): abort(400)
+    path=seed_path(filename)
+    logging.info("Admin %s downloaded workbook %s",current_user()["username"],path.name)
+    r=send_file(path,as_attachment=True,download_name=path.name,mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",max_age=0)
+    r.headers["Cache-Control"]="no-store"; return r
 @app.post("/admin/imports/preview")
 @admin_required
 def import_preview():

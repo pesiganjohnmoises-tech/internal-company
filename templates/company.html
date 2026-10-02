@@ -79,7 +79,7 @@
       <h2 class="sheet-caption" id="sec-{{s.id}}-title">{{s.title}} <span class="section-count">{{s.filled}} of {{s.fields|length}} provided</span></h2>
       {% if s.groups %}{{ field_grid(s) }}{% endif %}
       {% if s.id=='contact' %}
-      <h3 class="xl-title" id="sec-contacts">Contacts <span class="count">{{detail.contacts|length}}</span> <span class="xl-hint">one row per contact</span></h3>
+      <h3 class="xl-title" id="sec-contacts">Contacts <span class="count">{{detail.contacts|length}}</span> <span class="xl-hint">one row per contact</span>{% if detail.contacts %}<button type="button" class="secondary sheet-copy" id="contacts-copy" title="Copy contacts; paste straight into Excel" aria-label="Copy contacts; paste straight into Excel">{{icon('copy',15)}} <span>Copy</span></button>{% endif %}</h3>
       {% if detail.contacts %}
       {# One contact per row. Columns: Contact Type, Name, then fields.CONTACT_ORDER; then an Admin column (source row) for admins. #}
       {% set type_cols=detail.contact_columns|selectattr('0','equalto','contact_type')|list %}

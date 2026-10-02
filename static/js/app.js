@@ -19,6 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const hideEmpty = document.getElementById('hide-empty');
   const status = document.getElementById('sheet-status');
   const copy = document.getElementById('sheet-copy');
+  const contactsCopy = document.getElementById('contacts-copy');
+  const contactsTable = document.getElementById('contact-cards');
   const sortWrap = document.getElementById('contact-sort-wrap');
   // A cell's visible value: screen-reader text, the empty-value dash and buttons are left out.
   const cellText = cell => {
@@ -76,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const busy = terms.length || hideEmpty.checked;
     status.textContent = busy ? parts.map(([s, t, k]) => `${s} of ${t} ${k}${t === 1 ? '' : 's'}`).join(' · ') : '';
     copy.disabled = !parts.some(p => p[0]);
+    if (contactsCopy) contactsCopy.disabled = !contactsTable.querySelector('tr[data-row]:not([hidden])');
   };
 
   const select = (tab, focus) => {
@@ -126,22 +129,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }).forEach(row => body.append(row));
   });
 
-  // Copy what is shown as tab-separated text, which pastes into Excel as cells; a blank line separates tables.
+  // Copy what is shown as tab-separated text, which pastes into Excel as cells; a blank line separates tables. Rows follow the current filter and order.
+  const tableLines = table => [...table.tBodies[0].rows].filter(r => !r.hidden && !r.classList.contains('xl-group'))
+    .map(r => [...r.querySelectorAll(':scope > [data-cell]')].filter(c => !c.hidden).map(cellText).join('\t'));
+  const copyText = (button, text) => navigator.clipboard.writeText(text).then(() => {
+    const label = button.querySelector('span');
+    label.textContent = 'Copied';
+    button.classList.add('copied');
+    setTimeout(() => { label.textContent = 'Copy'; button.classList.remove('copied'); }, 1400);
+  });
   copy.addEventListener('click', () => {
     if (!navigator.clipboard) return;
     const blocks = [];
     active.forEach(panel => panel.querySelectorAll('[data-copy-block]').forEach(table => {
       if (table.closest('[hidden]')) return;
-      const lines = [...table.tBodies[0].rows].filter(r => !r.hidden && !r.classList.contains('xl-group'))
-        .map(r => [...r.querySelectorAll(':scope > [data-cell]')].filter(c => !c.hidden).map(cellText).join('\t'));
+      const lines = tableLines(table);
       if (lines.length > 1) blocks.push(lines.join('\n'));
     }));
-    navigator.clipboard.writeText(blocks.join('\n\n')).then(() => {
-      const label = copy.querySelector('span');
-      label.textContent = 'Copied';
-      copy.classList.add('copied');
-      setTimeout(() => { label.textContent = 'Copy'; copy.classList.remove('copied'); }, 1400);
-    });
+    copyText(copy, blocks.join('\n\n'));
+  });
+  // The contacts table on its own: header row plus one line per contact shown.
+  if (contactsCopy) contactsCopy.addEventListener('click', () => {
+    if (!navigator.clipboard) return;
+    const lines = tableLines(contactsTable);
+    if (lines.length > 1) copyText(contactsCopy, lines.join('\n'));
   });
 
   // Open the sheet named in the URL (#sec-contact), or the one holding the element it names

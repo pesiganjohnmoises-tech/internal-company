@@ -22,7 +22,9 @@
   </div>
   <dl class="key-facts">
     <div><dt>Agents</dt><dd>{{detail.contacts|length}}</dd></div>
-    {% if 'x_kgsales' in by and not by.x_kgsales.value.empty %}<div><dt>{{sales_labels['x_kgsales']}}</dt><dd>{{by.x_kgsales.value.text}}</dd></div>{% endif %}
+    {% for key,label in sales_labels.items() %}
+    {% if key in by and not by[key].value.empty %}<div><dt>{{label}}</dt><dd>{{by[key].value.text}}</dd></div>{% endif %}
+    {% endfor %}
   </dl>
 </header>
 

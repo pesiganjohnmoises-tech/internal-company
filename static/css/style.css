@@ -278,10 +278,15 @@ td.nowrap,.nowrap{white-space:nowrap;overflow-wrap:normal}
    top bar and sheet tabs (--xl-top is set by app.js). position:relative keeps screen-reader text inside. */
 .xl-scroll{position:relative;max-width:100%;border:1px solid #cfd6db;border-radius:4px;background:var(--surface)}
 .xl-scroll[hidden]{display:none}
+.xl-scroll:has(> .xl-payment){overflow-x:auto}
+.xl-payment{min-width:1000px}
+.xl-payment .field-label{width:auto}
 .xl-grid{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .xl-grid th,.xl-grid td{padding:6px 10px;border-right:1px solid #e1e6e9;border-bottom:1px solid #e1e6e9;vertical-align:top;text-align:left;font-size:13px;letter-spacing:0;text-transform:none;white-space:normal;overflow-wrap:anywhere;background:var(--surface);color:var(--ink)}
 .xl-grid tr[hidden],.xl-grid [data-col][hidden]{display:none}
 .xl-grid .xl-head>*{position:sticky;top:var(--xl-top,0px);z-index:3}
+/* Payment headers stick inside their scroll container, without the page toolbar offset. */
+.xl-payment .xl-head>*{top:0}
 /* The label column stays in view while scrolling sideways. */
 .xl-grid .field-label{min-width:150px;width:24%;color:var(--ink-2);font-weight:600}
 .xl-grid tbody tr:hover>td,.xl-grid tbody tr:hover>th{background:#f4faf9}
@@ -532,6 +537,13 @@ tr.row-flag td{background:var(--warn-bg)}
   .sheet-filter{flex:1 1 100%}
   .detail-sections{padding:8px}
   .xl-grid .field-label{min-width:110px}
+  .xl-payment,.xl-payment tbody{display:block;min-width:0}
+  .xl-payment .xl-head{display:none}
+  .xl-payment tr[data-row]{display:block;padding:8px 12px;border-bottom:1px solid #cfd6db}
+  .xl-payment tr[data-row]:last-child{border-bottom:0}
+  .xl-payment tr[data-row]>td{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;padding:6px 0;border:0}
+  .xl-payment tr[data-row]>td::before{content:attr(data-label);color:var(--muted);font-weight:600}
+  .workbook.hide-empty .xl-payment td.is-empty{display:none!important}
   /* Contacts stack on phones: each row becomes a block of "Label  value" lines. */
   .xl-contacts,.xl-contacts tbody{display:block}
   .xl-contacts colgroup,.xl-contacts thead,.xl-contacts .xl-head{display:none}

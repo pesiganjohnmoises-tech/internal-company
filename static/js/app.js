@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     active.forEach(panel => {
       let any = false, tables = 0;
       panel.querySelectorAll('table.xl-grid').forEach(table => {
-        const r = filterRows(table, terms, table.classList.contains('xl-contacts') ? 'contact' : 'field');
+        const r = filterRows(table, terms, table.classList.contains('xl-contacts') ? 'contact' : table.classList.contains('xl-payment') ? 'row' : 'field');
         table.closest('.xl-scroll').hidden = r[0] === 0 && terms.length > 0;
         if (r[0]) any = true;
         tables++;

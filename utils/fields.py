@@ -26,8 +26,9 @@ EXTRA_SECTIONS={"agentidfinal":"general","alias":"general","agentstatus":"genera
 SECTION_GROUPS={"general":[("Agent",["x_agentidfinal","x_alias","company_name"]),("Location",["country","state","city"]),
                            ("Status",["x_agentstatus","x_sourceofagent"])],
                 "contact":[("Sales team",["x_kgsales","x_pcsales","x_tisales","x_kwsales"]),("Company address",["address"])],
-                "payment":[("Payment",["x_paymentterms"]),("Network membership",["network","x_networkexpiry"]),
-                           ("Compliance",["x_kycstatus","x_mappingstatus"])]}
+                "payment":[("Payment",["x_paymentterms","network","x_networkexpiry","city_state","x_kycstatus","x_mappingstatus"])]}
+PAYMENT_FIELDS=[("x_paymentterms","Payment Terms"),("network","Network"),("x_networkexpiry","Network Expiry"),
+                ("city_state","City and state"),("x_kycstatus","KYC Status"),("x_mappingstatus","Mapping Status")]
 EXPIRY_SOON_DAYS=90  # expiry within this many days is flagged (company page, results, admin overview)
 # "Street" (and other address aliases) is presented as Street address; the XLSX header is kept as a hint.
 LABELS={"address":"Street address",
@@ -129,6 +130,9 @@ def build_company_detail(company,contacts,can_view):
     sections=[]
     for sid,title in SECTIONS:
         fields=[field(k,h,company_value(k,h)) for k,h in company_cols if section_for(k)==sid]
+        if sid=="payment":
+            fields=[field(k,label,None) for k,label in PAYMENT_FIELDS
+                    if ((can_view("city") or can_view("state")) if k=="city_state" else can_view(k))]
         groups=[]; placed=set()
         for gtitle,keys in SECTION_GROUPS.get(sid,[]):
             got=[f for k in keys for f in fields if f["key"]==k]
@@ -140,9 +144,30 @@ def build_company_detail(company,contacts,can_view):
         if fields or sid=="contact": sections.append({"id":sid,"title":title,"fields":fields,"groups":groups,"filled":sum(not f["value"].get("empty") for f in fields)})
     by_key={f["key"]:f for s in sections for f in s["fields"]}
     header={k:by_key[k] for k in ("x_agentidfinal","x_alias","x_agentstatus","network") if k in by_key and not by_key[k]["value"].get("empty")}
+    if can_view("network") and not is_empty(company["network"]):
+        header["network"]=field("network",heads.get("network","Network"),company["network"])
+    payment_section=next((s for s in sections if s["id"]=="payment"),None)
+    if payment_section is not None: payment_section["rows"]=[]
     cards=[]
     for n,ct in enumerate(contacts,start=1):
         row=load(ct["source_data"]); fields=[]
+        if payment_section is not None:
+            # Each contact retains its own workbook row. Never fill a missing
+            # Payment cell from the company's first row.
+            row_heads=dict(columns(list(row)))
+            def row_value(key):
+                if not key.startswith("x_") and key in ct.keys(): return ct[key]
+                return row.get(row_heads.get(key))
+            payment_fields=[]
+            for f in payment_section["fields"]:
+                key=f["key"]
+                if key=="city_state":
+                    parts=[row_value(k) for k in ("city","state") if can_view(k)]
+                    val=", ".join(str(v).strip() for v in parts if not is_empty(v))
+                else: val=row_value(key)
+                payment_fields.append(field(key,f["label"],val))
+            payment_section["rows"].append({"id":ct["id"],"fields":payment_fields,
+                                          "empty":all(f["value"].get("empty") for f in payment_fields)})
         for k,h in contact_cols:
             # Source of Agent falls back to the company value; Notes belong to this row only.
             if k=="x_sourceofagent": fields.append(field(k,h,row.get(h) if not is_empty(row.get(h)) else source.get(h)))

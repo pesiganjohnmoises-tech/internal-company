@@ -11,3 +11,5 @@ __pycache__/
 venv/
 .venv/
 backups/
+# Local Codex project skills
+/.agents/skills/

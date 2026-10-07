@@ -7,13 +7,6 @@
   {{icon('search',20)}}
   <label class="sr-only" for="directory-query">Search the directory</label>
   <input id="directory-query" name="q" value="{{q}}" placeholder="Agent name, agent ID, city, network or contact…" autocomplete="off"{% if not q and not country %} autofocus{% endif %}>
-  {% if countries|length>1 %}
-  <label class="sr-only" for="directory-country">Country</label>
-  <select id="directory-country" name="country" class="search-select">
-    <option value="">All countries</option>
-    {% for c in countries %}<option value="{{c}}" {% if c|lower==country|lower %}selected{% endif %}>{{c}}</option>{% endfor %}
-  </select>
-  {% endif %}
   {% if q or country %}<a class="clear-search" href="{{url_for('search')}}">Clear</a>{% endif %}
   {% if not compact %}</div>{% endif %}
   <button class="primary">Search</button>

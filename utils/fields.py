@@ -7,7 +7,7 @@ A new XLSX column appears automatically, under "Additional information" unless i
 in EXTRA_SECTIONS.
 """
 import re, json
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 from utils.importer import column_map, norm
 
 SECTIONS=[("general","General information"),("contact","Contact information"),("payment","Payment term"),("additional","Additional information")]
@@ -26,9 +26,9 @@ EXTRA_SECTIONS={"agentidfinal":"general","alias":"general","agentstatus":"genera
 SECTION_GROUPS={"general":[("Agent",["x_agentidfinal","x_alias","company_name"]),("Location",["country","state","city"]),
                            ("Status",["x_agentstatus","x_sourceofagent"])],
                 "contact":[("Sales team",["x_kgsales","x_pcsales","x_tisales","x_kwsales"]),("Company address",["address"])],
-                "payment":[("Payment",["x_paymentterms","network","x_networkexpiry","city_state","x_kycstatus","x_mappingstatus"])]}
+                "payment":[("Payment",["x_paymentterms","network","x_networkexpiry","address","city_state","x_kycstatus","x_mappingstatus"])]}
 PAYMENT_FIELDS=[("x_paymentterms","Payment Terms"),("network","Network"),("x_networkexpiry","Network Expiry"),
-                ("city_state","City and state"),("x_kycstatus","KYC Status"),("x_mappingstatus","Mapping Status")]
+                ("address","Street address"),("city_state","City and state"),("x_kycstatus","KYC Status"),("x_mappingstatus","Mapping Status")]
 EXPIRY_SOON_DAYS=90  # expiry within this many days is flagged (company page, results, admin overview)
 # "Street" (and other address aliases) is presented as Street address; the XLSX header is kept as a hint.
 LABELS={"address":"Street address",
@@ -116,6 +116,29 @@ def initials(name):
     words=[w for w in re.split(r"\s+",str(name or "")) if w[:1].isalnum()]
     return "".join(w[0] for w in words[:2]).upper() or "?"
 
+def nearest_expiry(contacts,can_view,today=None):
+    """Nearest permitted upcoming contact-row expiry; ties keep contact order."""
+    if not can_view("x_networkexpiry"): return None
+    today=today or datetime.now(timezone(timedelta(hours=8))).date()
+    nearest=None
+    for ct in contacts:
+        row=load(ct["source_data"]); heads=dict(columns(list(row)))
+        expiry=parse_date(row.get(heads.get("x_networkexpiry")))
+        if expiry is None: continue
+        days=(expiry-today).days
+        if not 0<=days<=EXPIRY_SOON_DAYS or (nearest and days>=nearest["days"]): continue
+        parts=[]
+        for key in ("city","state"):
+            if not can_view(key): continue
+            value=ct[key] if key in ct.keys() else row.get(heads.get(key))
+            if not is_empty(value): parts.append(str(value).strip())
+        network=None
+        if can_view("network"):
+            network=ct["network"] if "network" in ct.keys() else row.get(heads.get("network"))
+        nearest={"days":days,"location":", ".join(parts),
+                 "network":"" if is_empty(network) else str(network).strip()}
+    return nearest
+
 def build_company_detail(company,contacts,can_view):
     """Sections, header facts and contact cards for one company.
     can_view(key) applies the existing per-user field permissions."""
@@ -165,6 +188,8 @@ def build_company_detail(company,contacts,can_view):
                     parts=[row_value(k) for k in ("city","state") if can_view(k)]
                     val=", ".join(str(v).strip() for v in parts if not is_empty(v))
                 else: val=row_value(key)
+                if key=="address" and isinstance(val,str):
+                    val=re.sub(r"[ \t]*[\r\n]+[ \t]*"," ",val)
                 payment_fields.append(field(key,f["label"],val))
             payment_section["rows"].append({"id":ct["id"],"fields":payment_fields,
                                           "empty":all(f["value"].get("empty") for f in payment_fields)})
@@ -181,4 +206,5 @@ def build_company_detail(company,contacts,can_view):
     always={k for k,h in CONTACT_EXTRA}
     contact_columns=[(k,LABELS.get(k,h)) for k,h in contact_cols if k in always or any(not c["by_key"][k]["value"].get("empty") for c in cards)]
     contact_columns.sort(key=lambda kh: CONTACT_ORDER.index(kh[0]) if kh[0] in CONTACT_ORDER else len(CONTACT_ORDER))
-    return {"sections":sections,"header":header,"contacts":cards,"contact_columns":contact_columns,"has_source":bool(source),"by_key":by_key}
+    return {"sections":sections,"header":header,"contacts":cards,"contact_columns":contact_columns,"has_source":bool(source),"by_key":by_key,
+            "expiry_summary":nearest_expiry(contacts,can_view)}

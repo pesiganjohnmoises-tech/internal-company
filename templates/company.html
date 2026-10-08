@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_fields.html" import value %}{% from "_icons.html" import icon %}
+{% from "_summary.html" import expiry_summary %}
 {% block wrap_class %} wrap-wide{% endblock %}
 {% block title %}{{company.company_name if 'company_name' in fields or user.role in ('ADMIN','FULL_ACCESS') else 'Record'}} · Directory{% endblock %}
 {% block content %}
@@ -21,10 +22,11 @@
     {% endif %}
   </div>
   <dl class="key-facts">
-    <div><dt>Agents</dt><dd>{{detail.contacts|length}}</dd></div>
+    <div><dt>Contacts:</dt><dd>{{detail.contacts|length}}</dd></div>
     {% for key,label in sales_labels.items() %}
-    {% if key in by and not by[key].value.empty %}<div><dt>{{label}}</dt><dd>{{by[key].value.text}}</dd></div>{% endif %}
+    {% if key in by and not by[key].value.empty %}<div><dt>{{label}}:</dt><dd>{{by[key].value.text}}</dd></div>{% endif %}
     {% endfor %}
+    {% if detail.expiry_summary %}<div><dt>Network:</dt><dd>{{expiry_summary(detail.expiry_summary,show_label=False)}}</dd></div>{% endif %}
   </dl>
 </header>
 
@@ -33,7 +35,7 @@
 <div class="xl-scroll">
   <table class="xl-grid xl-fields" data-copy-block aria-labelledby="sec-{{s.id}}-title">
     <tbody>
-      <tr class="xl-head"><th scope="col" data-cell>Field</th><th scope="col" data-cell>Value</th></tr>
+      {% if s.id not in ('general','contact') %}<tr class="xl-head"><th scope="col" data-cell>Field</th><th scope="col" data-cell>Value</th></tr>{% endif %}
       {% for g in s.groups %}
       <tr class="xl-group" data-group="{{s.id}}-{{loop.index}}"><th colspan="2" scope="colgroup">{{g.title}}</th></tr>
       {% set gid=s.id ~ '-' ~ loop.index %}
@@ -103,13 +105,15 @@
       <div class="xl-scroll">
         <table class="xl-grid xl-contacts" id="contact-cards" data-copy-block>
           <colgroup>{% for k,l in type_cols %}<col class="xl-w-contact_type">{% endfor %}<col class="xl-w-name">{% for k,l in cols %}<col class="xl-w-{{k}}">{% endfor %}{% if notes %}<col class="xl-w-admin">{% endif %}</colgroup>
-          <tbody>
+          <thead>
             <tr class="xl-head">
               {% for k,label in type_cols %}<th scope="col" data-cell>{{label}}</th>{% endfor %}
               <th scope="col" data-cell class="field-label">Name</th>
               {% for k,label in cols %}<th scope="col" data-cell class="field-label">{{label}}</th>{% endfor %}
               {% if notes %}<th scope="col" data-cell>Admin</th>{% endif %}
             </tr>
+          </thead>
+          <tbody>
             {% for c in detail.contacts %}{% set t=c.by_key.get('contact_type') %}
             <tr class="xl-contact-row" data-row data-index="{{loop.index0}}" data-name="{{c.name}}" data-type="{{t.value.text if t and not t.value.empty else ''}}">
               {% for k,label in type_cols %}{{ contact_cell(c,k,label) }}{% endfor %}

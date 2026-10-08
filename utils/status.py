@@ -4,7 +4,7 @@ Search results, the company header and the admin overview all judge status here,
 "needs attention" on the overview shows the same warning wherever users meet it.
 """
 from datetime import date
-from utils.fields import load, is_empty, parse_date, tone, EXPIRY_SOON_DAYS
+from utils.fields import load, is_empty, parse_date, tone, EXPIRY_SOON_DAYS, nearest_expiry
 from utils.importer import norm
 
 RANK={"bad":3,"warn":2,"good":1,"neutral":0}
@@ -31,6 +31,22 @@ def agent_status(source_data,today=None):
             flags.append({"text":f"Network expires in {days} day{'s' if days!=1 else ''}","tone":"warn","kind":"expiry"})
     worst=max((i["tone"] for i in flags),key=lambda t:RANK.get(t,0),default="neutral")
     return {"tone":worst,"flags":flags,"expiry":expiry}
+
+def search_status(source_data,contacts,can_view,today=None):
+    """Search-only flags; company/admin status behavior stays unchanged."""
+    row={norm(k):v for k,v in load(source_data).items()}
+    flags=[]
+    status=row.get("agentstatus")
+    if can_view("x_agentstatus") and not is_empty(status):
+        label=str(status).strip()
+        flags.append({"text":label,"tone":tone(label),"kind":"agent"})
+    if can_view("x_kycstatus") and str(row.get("kycstatus") or "").strip().casefold()=="pending":
+        flags.append({"text":"KYC Pending","tone":"warn","kind":"kyc"})
+    expiry=nearest_expiry(contacts,can_view,today)
+    if expiry:
+        days=expiry["days"]
+        flags.append({"text":f"Network expires in {days} day{'s' if days!=1 else ''}","tone":"warn","kind":"expiry"})
+    return {"flags":flags}
 
 # ISO codes for the country tag on results; unknown names fall back to their first three letters.
 CODES={"india":"IN","singapore":"SG","thailand":"TH","usa":"US","united states":"US","united states of america":"US",

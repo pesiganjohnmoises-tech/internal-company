@@ -75,7 +75,7 @@ class SalesVisibilityTest(unittest.TestCase):
         self.assertEqual(response.status_code,200)
         html=response.get_data(as_text=True)
         header=html.split('<dl class="key-facts">',1)[1].split('</dl>',1)[0]
-        self.assertIn('<dt>Agents</dt><dd>12</dd>',header)
+        self.assertIn('<dt>Contacts:</dt><dd>12</dd>',header)
         return html,header
 
     def assert_sales(self,grants):
@@ -83,7 +83,7 @@ class SalesVisibilityTest(unittest.TestCase):
         for key,label in self.sales.items():
             expected=key in grants or self.user['role'] in ('ADMIN','FULL_ACCESS')
             with self.subTest(role=self.user['role'],grants=grants,sales=key):
-                self.assertEqual(f'<dt>{label}</dt><dd>{self.values[key]}</dd>' in header,expected)
+                self.assertEqual(f'<dt>{label}:</dt><dd>{self.values[key]}</dd>' in header,expected)
                 self.assertEqual(self.values[key] in html,expected)
 
     def test_each_individual_admin_grant(self):
@@ -93,6 +93,23 @@ class SalesVisibilityTest(unittest.TestCase):
     def test_no_grants_and_all_grants(self):
         self.assert_sales([])
         self.assert_sales(list(self.sales))
+
+    def test_header_labels_and_stored_sales_value(self):
+        from datetime import datetime, timezone, timedelta
+        today=datetime.now(timezone(timedelta(hours=8))).date()
+        self.source['KG Sales']='Kharla (Plus agent)'
+        self.con.execute('UPDATE companies SET source_data=?',(json.dumps(self.source),))
+        row={'Network':'OLO','Network Expiry':(today+timedelta(days=74)).isoformat(),
+             'City':'Mumbai','State':'Maharashtra'}
+        self.con.execute('UPDATE contacts SET source_data=? WHERE id=1',(json.dumps(row),))
+        _,header=self.render(['x_kgsales'])
+        self.assertIn('<dt>Kargosmart Sales:</dt><dd>Kharla (Plus agent)</dd>',header)
+        self.assertIn('<dt>Network:</dt><dd>',header)
+        self.assertEqual(header.count('Network:'),1)
+        self.assertIn('OLO Mumbai, Maharashtra - <span class="tone-warn">Expires in 74 days</span>',header)
+        self.con.execute("UPDATE contacts SET source_data='{}'")
+        _,header=self.render(['x_kgsales'])
+        self.assertNotIn('Network:',header)
 
     def test_revoked_grants(self):
         self.assert_sales(list(self.sales))

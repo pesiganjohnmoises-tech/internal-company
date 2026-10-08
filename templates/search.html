@@ -38,7 +38,6 @@
 {% if rows %}
 <ol class="result-list">
   {% for r in rows %}{% set p=previews.get(r.preview_id) %}
-  {% set place=[r.city if 'city' in fields else None, r.state if 'state' in fields else None]|select|list %}
   <li class="result-row">
     <a class="result-main" href="{{url_for('company',company_id=r.id)}}">
       <span class="result-name">{{r.company_name|hl(q) if 'company_name' in fields else 'Company record'}}</span>
@@ -46,8 +45,6 @@
       {% if alias and q and q.lower().split()|select('in',alias.lower())|list %}<span class="result-alias">Also known as {{alias|hl(q)}}</span>{% endif %}
       <span class="result-meta">
         {% if r.agent_id %}<span class="ref">{{r.agent_id|hl(q)}}</span>{% endif %}
-        <span class="loc">{% if place %}{% for x in place %}{{x|hl(q)}}{% if not loop.last %}, {% endif %}{% endfor %} · {% endif %}{% if 'country' in fields %}<span class="cc" title="{{r.country}}">{{r.code}}</span>{% endif %}</span>
-        {% if 'network' in fields and r.network %}<span class="net">{{r.network|hl(q)}}</span>{% endif %}
       </span>
       {{ status_line(r.status) }}
     </a>

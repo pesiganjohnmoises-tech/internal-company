@@ -279,14 +279,20 @@ td.nowrap,.nowrap{white-space:nowrap;overflow-wrap:normal}
 .xl-scroll{position:relative;max-width:100%;border:1px solid #cfd6db;border-radius:4px;background:var(--surface)}
 .xl-scroll[hidden]{display:none}
 .xl-scroll:has(> .xl-payment){overflow-x:auto}
-.xl-payment{min-width:1000px}
-.xl-payment .field-label{width:auto}
+.xl-grid.xl-payment{width:auto;min-width:0;table-layout:auto}
+.xl-grid.xl-payment .field-label{width:auto;min-width:0}
 .xl-grid{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .xl-grid th,.xl-grid td{padding:6px 10px;border-right:1px solid #e1e6e9;border-bottom:1px solid #e1e6e9;vertical-align:top;text-align:left;font-size:13px;letter-spacing:0;text-transform:none;white-space:normal;overflow-wrap:anywhere;background:var(--surface);color:var(--ink)}
 .xl-grid tr[hidden],.xl-grid [data-col][hidden]{display:none}
 .xl-grid .xl-head>*{position:sticky;top:var(--xl-top,0px);z-index:3}
 /* Payment headers stick inside their scroll container, without the page toolbar offset. */
 .xl-payment .xl-head>*{top:0}
+.xl-grid.xl-payment th,.xl-grid.xl-payment td{text-align:center;padding:7px 9px;line-height:1.4;overflow-wrap:break-word;word-break:normal}
+.xl-payment td[data-label="Payment Terms"]{min-width:90px}
+.xl-payment td[data-label="Network"]{min-width:60px}
+.xl-payment td[data-label="Network Expiry"]{min-width:130px}
+.xl-payment td[data-label="KYC Status"],.xl-payment td[data-label="Mapping Status"]{min-width:90px}
+.xl-grid.xl-payment td[data-label="City and state"]{min-width:140px;text-align:left}
 /* The label column stays in view while scrolling sideways. */
 .xl-grid .field-label{min-width:150px;width:24%;color:var(--ink-2);font-weight:600}
 .xl-grid tbody tr:hover>td,.xl-grid tbody tr:hover>th{background:#f4faf9}
@@ -297,6 +303,10 @@ td.nowrap,.nowrap{white-space:nowrap;overflow-wrap:normal}
 .xl-grid td a{margin-right:8px;text-decoration:none}
 .xl-grid td a:hover{text-decoration:underline}
 .xl-grid td.kind-address,.xl-grid td.kind-text{white-space:pre-line}
+/* Keep long addresses readable; the surrounding frame scrolls when columns cannot fit. */
+.xl-grid.xl-payment td.kind-address{min-width:240px;width:280px;text-align:left}
+.xl-grid.xl-payment td.kind-address,.xl-payment td.kind-address>span{white-space:normal;overflow-wrap:break-word;word-break:normal}
+.xl-payment td.kind-address>span{display:block;max-width:320px;overflow-wrap:anywhere}
 .xl-fields .field-label{width:220px}
 /* Field grids hold short values: capped so Field and Value sit together and long text stays ~90 characters a line.
    The contacts table keeps the full width. */
@@ -304,23 +314,18 @@ td.nowrap,.nowrap{white-space:nowrap;overflow-wrap:normal}
 .xl-grid tr.is-empty>.field-label,.xl-grid td.is-empty{color:var(--faint)}
 .xl-grid .value-empty{color:var(--faint)}
 .xl-grid .icon-btn{width:22px;height:22px;margin:-3px 0 0 -2px}
-/* Contacts: one column per contact, each wide enough for an email address. */
-/* Contacts: one contact per row. Fixed column shares fit the page; long values wrap inside the cell. */
-.xl-contacts{table-layout:fixed}
-.xl-contacts .xl-w-contact_type{width:8%}
-.xl-contacts .xl-w-name{width:9%}
-.xl-contacts .xl-w-job_position{width:8%}
-.xl-contacts .xl-w-email{width:19%}
-.xl-contacts .xl-w-phone{width:11%}
-.xl-contacts .xl-w-landline_no{width:11%}
-.xl-contacts .xl-w-address{width:15%}
-.xl-contacts .xl-w-x_sourceofagent{width:7%}
-.xl-contacts .xl-w-x_notes{width:6%}
-.xl-contacts .xl-w-admin{width:6%}
+/* Contact columns follow their content; long text wraps within readable bounds. */
+.xl-scroll:has(> .xl-contacts){overflow-x:auto}
+.xl-grid.xl-contacts{width:auto;table-layout:auto}
+.xl-contacts .xl-c-name{min-width:110px;max-width:180px}
+.xl-contacts td>.xl-v{display:block;max-width:200px}
+.xl-contacts .xl-c-email>.xl-v{max-width:230px}
+.xl-contacts .xl-c-address>.xl-v{width:240px;max-width:280px}
+.xl-contacts .xl-c-x_notes>.xl-v{max-width:240px}
 /* Headers wrap only between words, and only when the column is too narrow for them. */
-/* The header row is the table's first row, so its widths would set the fixed layout's columns; the <col>s decide. */
-.xl-contacts .xl-head>th{width:auto;min-width:0;white-space:normal;overflow-wrap:normal}
-.xl-contacts td,.xl-contacts .xl-head>th{padding:6px 8px;font-size:12.5px;overflow-wrap:break-word}
+.xl-contacts .xl-head>th{top:0;width:auto;min-width:0;white-space:normal;overflow-wrap:normal}
+.xl-contacts td,.xl-contacts .xl-head>th{padding:5px 7px;font-size:12.5px;line-height:1.4;text-align:left;overflow-wrap:break-word}
+.xl-contacts td>.xl-v{overflow-wrap:anywhere}
 .xl-contacts td a{margin-right:6px}
 .xl-contacts .xl-c-name strong{font-weight:600}
 .xl-contacts .xl-c-name .unnamed{color:var(--muted);font-weight:500}
@@ -538,14 +543,19 @@ tr.row-flag td{background:var(--warn-bg)}
   .detail-sections{padding:8px}
   .xl-grid .field-label{min-width:110px}
   .xl-payment,.xl-payment tbody{display:block;min-width:0}
+  .xl-grid.xl-payment{width:100%}
   .xl-payment .xl-head{display:none}
   .xl-payment tr[data-row]{display:block;padding:8px 12px;border-bottom:1px solid #cfd6db}
   .xl-payment tr[data-row]:last-child{border-bottom:0}
-  .xl-payment tr[data-row]>td{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;padding:6px 0;border:0}
+  .xl-grid.xl-payment tr[data-row]>td{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;padding:6px 0;border:0;width:auto;min-width:0;text-align:left;overflow-wrap:anywhere}
+  .xl-payment td.kind-address>span{max-width:none}
   .xl-payment tr[data-row]>td::before{content:attr(data-label);color:var(--muted);font-weight:600}
   .workbook.hide-empty .xl-payment td.is-empty{display:none!important}
   /* Contacts stack on phones: each row becomes a block of "Label  value" lines. */
   .xl-contacts,.xl-contacts tbody{display:block}
+  .xl-grid.xl-contacts{width:100%}
+  .xl-grid.xl-contacts td>.xl-v{width:auto;max-width:none}
+  .xl-contacts .xl-c-name{min-width:0;max-width:none}
   .xl-contacts colgroup,.xl-contacts thead,.xl-contacts .xl-head{display:none}
   .xl-contacts tr.xl-contact-row{display:block;position:relative;padding:8px 12px;border-bottom:1px solid #cfd6db}
   .xl-contacts tr.xl-contact-row[hidden]{display:none}

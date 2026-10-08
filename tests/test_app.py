@@ -40,6 +40,14 @@ def client(u,password=PW,ip="127.0.0.1"):
     c.post("/login",data={"username":u,"password":password}); return c
 adm=client("admin")
 
+# The same search form serves the landing page, results and older country links.
+for query in ({},{"q":"SGP001"},{"country":"Singapore"}):
+    html=adm.get("/search",query_string=query).data.decode()
+    check(f"search: single query form without country controls {query}",
+          html.count('id="directory-query"')==1 and 'name="country"' not in html
+          and 'directory-country' not in html and 'All countries' not in html
+          and '<button class="primary">Search</button>' in html)
+
 # --- Startup cleanup -------------------------------------------------------------------------------
 check("startup removed orphaned contacts",q("SELECT COUNT(*) FROM contacts WHERE company_id NOT IN (SELECT id FROM companies)")==0)
 check("startup removed orphaned company grants",q("SELECT COUNT(*) FROM user_company_access WHERE company_id NOT IN (SELECT id FROM companies)")==0)
@@ -573,7 +581,9 @@ st_name=q("SELECT company_name FROM companies WHERE id=?",st_id)
 h=boss.get("/search",query_string={"q":st_name}).data.decode()
 check("results: status line shows agent status, KYC and expiry",'tone-good">Active<' in h and 'tone-warn">KYC Pending<' in h and "Network expires in 20 days" in h)
 h=boss.get(f"/company/{st_id}").data.decode()
-check("company: same status line in the header","KYC Pending" in h and "Network expires in 20 days" in h)
+company_header=h[h.index('<header class="company-header">'):h.index('</header>')]
+check("company: simplified header keeps dynamic Agents count",'<dt>Agents</dt>' in company_header and '<dt>Contacts</dt>' not in company_header)
+check("company: header omits status, location and network summaries",'status-line' not in company_header and '<dt>Location</dt>' not in company_header and '<dt>Network</dt>' not in company_header)
 check("status agrees with the overview's attention list",any(x["id"]==st_id for x in A.dashboard.attention(con)["kyc_pending"]))
 check("status: completed KYC is not flagged",not [f for f in A.agent_status('{"KYC Status":"Approved"}')["flags"]])
 check("status: unreadable expiry is not guessed",A.agent_status('{"Network Expiry":"see contract"}')["flags"]==[])
@@ -587,7 +597,8 @@ check("company: General information, Contact information, Payment term tabs in t
 check("company: contacts table sits on the Contact information sheet",h.index('id="sec-contact"')<h.index('id="sec-contacts"')<h.index('id="sec-payment"'))
 gen=h[h.index('id="sec-general"'):h.index('id="sec-contact"')]; pay=h[h.index('id="sec-payment"'):]
 check("company: general sheet rows follow the requested order",[l for l in re.findall(r'class="field-label">([^<]*)<',gen)][:7]==["Agent ID Final","Alias","Company Name Entity","Country","State","City","Agent Status"])
-check("company: payment sheet rows follow the requested order",re.findall(r'class="field-label">([^<]*)<',pay)[:5]==["Payment Terms","Network","Network Expiry","KYC Status","Mapping Status"])
+check("company: payment sheet columns follow the requested order",re.findall(r'class="field-label">([^<]*)<',pay)[:6]==["Payment Terms","Network","Network Expiry","City and state","KYC Status","Mapping Status"])
+check("company: payment has one row per contact",pay.count('class="xl-payment-row')==q("SELECT COUNT(*) FROM contacts WHERE company_id=?",st_id))
 check("company: every tab has its panel",len(tabs)==h.count('role="tabpanel"'))
 check("company: sheets are spreadsheet grids, one row per contact",'class="xl-grid xl-fields"' in h and 'class="xl-grid xl-contacts"' in h and h.count('class="xl-contact-row"')==q("SELECT COUNT(*) FROM contacts WHERE company_id=?",st_id))
 check("company: copy buttons on contact email/phone",'data-copy=' in h)

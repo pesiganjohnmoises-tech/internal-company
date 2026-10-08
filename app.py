@@ -9,9 +9,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_wtf.csrf import CSRFProtect
 from utils.importer import import_workbook, column_map, detect_country, backfill_source_data, agent_id_from_source, utcnow
-from utils.fields import build_company_detail
+from utils.fields import build_company_detail, nearest_expiry
 from utils import dashboard, profile_import
-from utils.status import agent_status, country_code
+from utils.status import agent_status, country_code, search_status
 
 ROOT=Path(__file__).resolve().parent
 DB=ROOT/"directory.db"; DATA=ROOT/"data"; IMPORTS=ROOT/"imports"
@@ -331,6 +331,13 @@ def search():
             exact=f"co.agent_id COLLATE NOCASE IN ({','.join('?'*len(terms))}) DESC," if terms else ""
             rows=c.execute(sql+f" ORDER BY {exact}cn.name,co.company_name COLLATE NOCASE LIMIT ? OFFSET ?",params+terms+[PAGE_SIZE,(page-1)*PAGE_SIZE]).fetchall()
             rows=[{**dict(r),"status":agent_status(r["source_data"]),"code":country_code(r["country"])} for r in rows]
+            if rows:
+                company_ids=[r["id"] for r in rows]
+                contact_rows=c.execute(f"SELECT * FROM contacts WHERE company_id IN ({','.join('?'*len(company_ids))}) ORDER BY id",company_ids).fetchall()
+                by_company={cid:[] for cid in company_ids}
+                for ct in contact_rows: by_company[ct["company_id"]].append(ct)
+                for r in rows:
+                    r["status"]=search_status(r["source_data"],by_company[r["id"]],lambda key: key in fields or (key.startswith("x_") and key not in SALES_FIELDS))
             ids=[r["preview_id"] for r in rows if r["preview_id"]]
             if ids: previews={r["id"]:r for r in c.execute(f"SELECT id,name,job_position,email,phone,landline_no FROM contacts WHERE id IN ({','.join('?'*len(ids))})",ids)}
     start=(page-1)*PAGE_SIZE+1 if total else 0

@@ -1,0 +1,3 @@
+{% macro expiry_summary(expiry,show_label=True) -%}
+{% if expiry %}<span class="expiry-summary">{% if expiry.network %}{% if show_label %}Network: {% endif %}{{expiry.network}}{% if expiry.location %} {{expiry.location}}{% endif %} - {% elif expiry.location %}{{expiry.location}} - {% endif %}<span class="tone-warn">Expires in {{expiry.days}} day{{'s' if expiry.days!=1}}</span></span>{% endif %}
+{%- endmacro %}

@@ -1,83 +1,205 @@
+The local tools still can’t edit the file. Here’s a simpler replacement for `README.md`, based on the content you shared:
+
+````markdown
 # Internal Company Directory
 
-A minimal Flask + SQLite internal company directory with server-enforced access controls, Excel imports, and an admin area.
+An internal tool for finding company details, contacts, and other information imported from Excel.
 
-## Requirements
-- Python 3.10+
-- pip
+Users see only the companies and fields they have permission to access. Admins manage users, access, and imports.
 
-## Quick start
-```bash
+## Everyday workflow
+
+**Sign in → Search for a company → Open its details → View or copy information**
+
+1. Sign in with the account provided by your admin.
+2. Search for a company using its name, Agent ID, Alias, or other information you can access.
+3. Open a company from the results.
+4. Select a sheet:
+   - **General information**
+   - **Contact information**
+   - **Payment term**
+   - **Additional information**, when available
+5. Use the filter and **Hide empty rows** to find the information you need.
+6. Select **Copy** to paste the visible sheet into Excel or Google Sheets. The contacts table has a separate Copy button.
+
+If a company or field is missing, ask your admin to check your access.
+
+## Access explained
+
+| Account | What it can see |
+| --- | --- |
+| Standard user | Assigned companies within assigned countries, and permitted fields |
+| Full Access user | All fields in the records available to that account |
+| Admin | All records and fields, plus admin tools |
+
+Standard users need **both country and company access** to view a company.
+
+Sales fields—KG Sales, PC Sales, TI Sales, and KW Sales—are hidden for standard users unless granted by an admin. Search follows the user's field permissions; Agent ID and Alias are always searchable.
+
+## Admin workflow
+
+**Import data → Review the results → Grant access → Let users search**
+
+### 1. Import an Excel workbook
+
+1. Open **Admin → Excel imports**.
+2. Upload an `.xlsx` workbook or import one already in `data/`.
+3. Check the country. It comes from the filename unless you override it.
+4. Run the import.
+5. Review import history and the imported company details.
+
+For a standard workbook:
+
+- The first worksheet is used.
+- A company-name column is required.
+- Common columns include company, country, network, contact type, name, job position, email, phone, and address.
+- Extra columns are kept and appear on the company page.
+- New country workbooks do not require code changes.
+
+Admins can also download the original workbooks from the Excel imports page.
+
+### 2. Understand how imports affect existing data
+
+**Standard imports replace a country's workbook data:**
+
+- Matching companies keep their IDs, links, and user access.
+- Companies missing from the new workbook are removed, along with their contacts and access assignments.
+- New companies must be assigned to users.
+
+**Mapped imports use a saved column mapping for a different workbook layout:**
+
+- Review the mapping, errors, and every row before saving.
+- Choose whether to add companies and contacts, add only new companies, or also update existing records.
+- No companies are deleted.
+- Blank cells do not erase existing values.
+
+Mapping profiles are stored in `utils/import_profiles/`. A standard import rejects a workbook with a mapped profile unless a Country override is supplied.
+
+### 3. Give users access
+
+1. Open **Admin → Users**.
+2. Create a user or edit an existing account.
+3. Assign the countries and companies they need.
+4. Select the fields and sales columns they may view.
+5. Save the changes.
+
+Admins can also reset passwords and disable accounts. An admin cannot remove their own admin access, disable their own account, or delete it.
+
+### 4. Review the directory
+
+The admin overview shows:
+
+- Companies needing attention, including membership expiry and KYC issues
+- Missing or shared contact details
+- Country, network, and sales coverage
+- User access
+- Import health and recent activity
+
+Admins can export companies or contacts as CSV.
+
+### Delete a country
+
+Go to **Excel imports → Countries** and type the country name to confirm.
+
+This removes the country's companies, contacts, and user access assignments. A database backup is created first.
+
+## Run locally
+
+Requires **Python 3.10+** and **pip**.
+
+### Windows PowerShell
+
+```powershell
 python -m venv venv
-# macOS/Linux
-source venv/bin/activate
-# Windows PowerShell: .\venv\Scripts\Activate.ps1
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python app.py
 ```
-Open http://127.0.0.1:5000. The database initializes automatically as `directory.db`.
 
-## Initial accounts
-- Admin: `admin` / `ChangeMe-Admin-2026!`
-- Standard all-directory user: `kharla` / `ChangeMe-Kharla-2026!`
+### macOS or Linux
 
-These two accounts are created only when the database has no users yet (first start); deleting one later does not bring it back.
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
 
-**Change both passwords immediately** in a real deployment. Set `ADMIN_PASSWORD`, `KHARLA_PASSWORD`, and a strong `SECRET_KEY` environment variable before first launch. These defaults are for local demonstration only.
+Open **http://127.0.0.1:5000**.
 
-## Architecture
-Flask routes and templates provide the UI; SQLite is the normalized working database. `utils/importer.py` maps flexible XLSX headers, detects country from the filename, validates company names, preserves source file/row metadata, and flags likely duplicates rather than deleting them.
+The app creates `directory.db` automatically.
 
-## Excel format and imports
-Place `.xlsx` files in `data/` or upload from Admin → Excel imports. Country is inferred from the filename (`thailand.xlsx` → Thailand); an admin can override it. The first worksheet is read. A company-name column is required. Supported columns include company, country, network, contact type, name, job position, email, phone, and address/street; these map to database columns. Every worksheet column, recognized or not, is also kept per row as JSON (`source_data`) and shown on the company detail page under its original header (`Street` is presented as Address). Section grouping for unmapped columns lives in `utils/fields.py`; new columns appear under "Additional information" with no code changes. Standard users see only the fields in their field access (`user_field_access`, keys such as `x_agentstatus` for unmapped columns); admins and FULL_ACCESS users see all fields.
+## First-time accounts
 
-Import source files using the buttons on the Excel imports page. Newly added country workbooks require no code changes. Admins can also download each workbook in `data/` from that page, exactly as stored (each download is logged); Excel lock files (`~$name.xlsx`) are ignored.
+When the database has no users, the app creates:
 
-Workbooks in a different layout use a **mapped import**: a JSON profile in `utils/import_profiles/` (for example `indiav2.json` for `indiav2.xlsx`) maps their columns onto the directory's fields. The admin reviews the mapping, errors and every row before anything is saved, and chooses to add new companies and contacts, only add new companies, or also update existing ones. A mapped import only adds to a country: nothing is deleted, and a blank cell never erases a stored value. The standard import refuses a workbook that has a mapped profile unless a Country override is given.
+- `admin` — administrator
+- `kharla` — standard user with initial access across the directory
 
-Re-importing a country updates its companies in place, matched by company name: they keep their IDs (and bookmarked URLs) and every user's company access. Companies no longer in the workbook are removed together with their contacts and access rows; new companies need to be granted to Users.
+Set `ADMIN_PASSWORD`, `KHARLA_PASSWORD`, and a strong, persistent `SECRET_KEY` before the first launch. If you use the built-in demonstration passwords, change them immediately.
 
-A whole country can be deleted from Excel imports → Countries by typing its name to confirm; its companies, contacts and every user's access to them are removed.
+These settings apply to initial account creation; they do not reset existing passwords. Deleted starter accounts are not automatically recreated.
 
-## Permissions
-A standard user needs both a country assignment and a company assignment to view a record. The SQL query applies both checks before results are returned. Admins can access all records. Kharla is created as `USER` and receives all country/company assignments at every start until an admin edits her account; after that her access is managed like any other user's and is never overridden.
+Kharla's country and company assignments are refreshed at startup until an admin edits her account. After that, admins manage her access normally.
 
-Sales columns (KG Sales, PC Sales, TI Sales, KW Sales) are granted per User from Admin → Users → Edit access → Sales column access; they are stored in `user_field_access` (`x_kgsales`, `x_pcsales`, `x_tisales`, `x_kwsales`) and default to hidden. Admin and Full Access users always see them. Search only matches the columns a user is allowed to see; Agent ID and the company Alias are always searchable.
+## Backups
 
-## Company page
-Each company opens as a small workbook: sheet tabs (General information, Contact information, Payment term, and Additional information when the workbook has other columns), each a Field | Value grid. The Contact information sheet also holds the contacts table, one row per contact. A filter box, "Hide empty rows" and a contact order apply to the sheet shown. **Copy** copies what the sheet shows as tab-separated text that pastes into Excel or Google Sheets as cells; the contacts table has its own Copy button for just the contacts.
+The app saves a database backup before each import and country deletion. It keeps the newest 10 backups in `backups/`.
 
-## Admin
-Admins can create/edit/disable users, reset passwords, assign country/company access, import workbooks, inspect import history, view database status, and inspect source metadata.
+To restore a backup:
 
-The admin overview (`/admin`) also shows, read-only: companies needing attention (expired or expiring network memberships, pending KYC, inactive agents, unreadable expiry dates), contact data quality (missing emails/phones, shared emails), countries and networks, sales rep coverage per sales column, what each account can see, import health (including `data/` workbooks older than the data they would replace), and recent admin activity and failed sign-ins from `app.log`. Each panel fails independently. Admins can export companies (with every XLSX column) or contacts as CSV from the buttons at the top of the overview; exports are logged and formula-like cells are neutralized. Standard users cannot access `/admin` routes. An admin cannot remove admin access from, disable, or delete their own account. User changes, imports, creations and deletions are logged to `app.log` with the acting admin.
+1. Stop the app.
+2. Save a copy of the current `directory.db`.
+3. Copy the selected backup over `directory.db`.
+4. Restart the app.
 
-## Security notes
-- Passwords are hashed using Werkzeug.
-- Flask-WTF CSRF protection covers forms.
-- Sessions use HttpOnly and SameSite=Lax cookies; enable HTTPS and set `COOKIE_SECURE=1` in production.
-- SQL uses parameterized queries.
-- Uploads are limited to `.xlsx`, use secure filenames, are size-limited, and temporary uploaded files are removed after import.
-- Set a persistent random `SECRET_KEY`. Without it, a key is generated once into `.secret_key` (kept out of version control) so sessions survive restarts.
-- Five failed sign-ins for the same username and IP lock that pair for 15 minutes, and 30 failures from one IP lock that IP (in memory, per process). Unknown usernames take as long to reject as wrong passwords.
-- Behind a proxy that passes the visitor address in a header, set `CLIENT_IP_HEADER` (for example `X-Real-IP`) so throttling sees real visitors; otherwise every visitor shares the proxy address. Unset, `request.remote_addr` is used as before.
-- Sessions end after 2 hours of inactivity or 12 hours in total, and changing a user's password signs that user out everywhere.
-- Pages send `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff` and `Referrer-Policy: same-origin`; log messages are kept on one line so typed input cannot forge log entries.
-- The admin overview warns while `admin` or `kharla` still use the initial passwords.
-- This starter is intended for trusted internal/local deployment. Add HTTPS, backups, operational monitoring, and a production WSGI server before exposing it publicly.
-
-## Database
-Tables: users, countries, companies, contacts, user_country_access, user_company_access, user_field_access, imports. Indexes cover common search fields. A copy of the database is saved in `backups/` before every import and country deletion; the newest 10 are kept. To restore one, copy it over `directory.db` and restart the app. Still back up `directory.db` before upgrades.
+Also back up the database before upgrades.
 
 ## Troubleshooting
-- Missing `openpyxl`/Flask: activate your virtual environment and run `pip install -r requirements.txt`.
-- Import error: verify the workbook is readable and includes a company-name header; check `app.log`.
-- Login issue: confirm account is ACTIVE; reset credentials through admin or environment variables for first initialization.
-- Tests: `python tests/test_app.py` and `python tests/test_mapped_import.py` run end-to-end checks against a temporary copy of the project and database.
-- Port busy: stop the other process or change the `app.run` port in `app.py`.
 
-## Version notes
-What changed in each release is in the `VERSION_*_NOTES.md` files; the latest is `VERSION_10_NOTES.md`.
+| Problem | What to do |
+| --- | --- |
+| A Python package is missing | Activate the virtual environment and run `pip install -r requirements.txt`. |
+| Sign-in fails | Ask an admin to check that the account is active or reset its password. |
+| Sign-in is temporarily blocked | Wait 15 minutes after repeated failed attempts. |
+| A company is missing | Ask an admin to check both country and company assignments. |
+| A field is missing | Ask an admin to check field access. |
+| An import fails | Check that the workbook opens, has a company-name column, and uses the correct import method. Review `app.log`. |
+| Port 5000 is busy | Stop the other app using the port, or change the port in `app.py`. |
 
-## Notes
-The importer treats filename/override country as authoritative. It does not silently merge differing company names. Similar company names are counted as possible duplicates. Review import history and records after importing.
+## Deployment and security
+
+For deployment, use HTTPS, a production WSGI server, regular backups, and monitoring.
+
+- Set a persistent `SECRET_KEY`. Otherwise, the app creates one in `.secret_key`.
+- Set `COOKIE_SECURE=1` when using HTTPS.
+- If your proxy provides the visitor's IP address, configure `CLIENT_IP_HEADER` to match that header.
+- Sessions expire after 2 hours of inactivity or 12 hours total.
+- Changing a password signs that user out of all sessions.
+- Passwords are hashed, forms have CSRF protection, and database queries are parameterized.
+- Repeated failed sign-ins are temporarily blocked.
+- Admin activity is recorded in `app.log`.
+
+## Technical reference
+
+Built with Flask, Jinja templates, and SQLite.
+
+- `utils/importer.py` — Excel import processing
+- `utils/fields.py` — field grouping and additional columns
+- `utils/import_profiles/` — mapped import profiles
+- `directory.db` — working database
+- `data/` — source workbooks
+- `backups/` — automatic database backups
+- `app.log` — activity and troubleshooting logs
+
+Imports preserve original row data and source information. Similar company names are flagged as possible duplicates for review.
+
+Run the isolated end-to-end checks with:
+
+```bash
+python tests/test_app.py
+python tests/test_mapped_import.py
+```
+
+Release details are in `VERSION_*_NOTES.md`. The latest release referenced by this guide is `VERSION_10_NOTES.md`.
+````

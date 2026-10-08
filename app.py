@@ -1,4 +1,4 @@
-import os, re, io, csv, sqlite3, logging, secrets, time, hashlib, hmac, subprocess, unicodedata, shutil
+import os, re, io, csv, sqlite3, logging, secrets, time, hashlib, hmac, subprocess, unicodedata, shutil, ipaddress
 from functools import wraps
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 from flask_wtf.csrf import CSRFProtect
 from utils.importer import import_workbook, column_map, detect_country, backfill_source_data, agent_id_from_source, utcnow
 from utils.fields import build_company_detail, nearest_expiry
-from utils import dashboard, profile_import
+from utils import dashboard, profile_import, security
 from utils.status import agent_status, country_code, search_status
 
 ROOT=Path(__file__).resolve().parent
@@ -26,12 +26,17 @@ def load_secret_key():
         try: os.chmod(path,0o600)
         except OSError: pass
         return key
-    except OSError: return secrets.token_hex(32)
+    except OSError as e: raise RuntimeError("A persistent session key could not be created. Configure SECRET_KEY.") from e
+APP_ENV=os.environ.get("APP_ENV","development").strip().lower()
+if APP_ENV not in ("development","production"): raise RuntimeError("APP_ENV must be development or production.")
+if APP_ENV=="production" and (len(os.environ.get("SECRET_KEY",""))<32 or os.environ.get("COOKIE_SECURE","1")!="1" or os.environ.get("FLASK_DEBUG")=="1"):
+    raise RuntimeError("Production requires a persistent SECRET_KEY of at least 32 characters, secure cookies, and debug disabled.")
 app=Flask(__name__)
 app.secret_key=load_secret_key()
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
-                  SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE","0")=="1",
+                  SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE","1" if APP_ENV=="production" else "0")=="1",
                   MAX_CONTENT_LENGTH=16*1024*1024)
+app.config["SECURITY_RATE_LIMITS"]={"login":60,"directory":120,"export":6,"import":20}
 csrf=CSRFProtect(app)
 @app.url_defaults
 def static_version(endpoint,values):
@@ -55,8 +60,20 @@ for handler in logging.getLogger().handlers: handler.addFilter(SingleLineLog())
 # Optional: behind a proxy that puts the visitor's address in a header (e.g. X-Real-IP), name it here
 # so sign-in throttling sees real client addresses instead of the proxy's.
 CLIENT_IP_HEADER=os.environ.get("CLIENT_IP_HEADER","").strip()
+TRUSTED_PROXIES=tuple(ipaddress.ip_network(x.strip()) for x in os.environ.get("TRUSTED_PROXY_CIDRS","").split(",") if x.strip())
+if CLIENT_IP_HEADER and not TRUSTED_PROXIES: raise RuntimeError("CLIENT_IP_HEADER requires explicit TRUSTED_PROXY_CIDRS.")
 def client_ip():
-    return (request.headers.get(CLIENT_IP_HEADER,"").split(",")[0].strip() if CLIENT_IP_HEADER else "") or request.remote_addr
+    try: peer=ipaddress.ip_address(request.remote_addr or "")
+    except ValueError: return "unknown"
+    raw=request.headers.get(CLIENT_IP_HEADER,"") if CLIENT_IP_HEADER else ""
+    if not raw or len(raw)>2048 or not any(peer in net for net in TRUSTED_PROXIES): return str(peer)
+    try: chain=[ipaddress.ip_address(x.strip()) for x in raw.split(",")]
+    except ValueError: return str(peer)
+    # Walk from the nearest proxy; a client-controlled leftmost value cannot override an untrusted hop.
+    for hop in reversed(chain):
+        if not any(peer in net for net in TRUSTED_PROXIES): break
+        peer=hop
+    return str(peer)
 @app.after_request
 def security_headers(resp):
     # Pages must not be framed by other sites (clickjacking); the rest only tightens browser defaults.
@@ -64,11 +81,14 @@ def security_headers(resp):
     resp.headers.setdefault("Content-Security-Policy","frame-ancestors 'none'")
     resp.headers.setdefault("X-Content-Type-Options","nosniff")
     resp.headers.setdefault("Referrer-Policy","same-origin")
+    if request.endpoint!="static" and ("uid" in session or request.endpoint in ("login","logout") or resp.status_code>=400):
+        resp.headers["Cache-Control"]="no-store"
     return resp
 def db():
     con=sqlite3.connect(DB); con.row_factory=sqlite3.Row; con.execute("PRAGMA foreign_keys=ON"); return con
 def init_db():
     with db() as c:
+        # Additive security tables; existing users, record IDs, and grants are retained.
         c.executescript("""
         CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, username TEXT UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'USER', status TEXT NOT NULL DEFAULT 'ACTIVE', created_at TEXT, updated_at TEXT);
         CREATE TABLE IF NOT EXISTS countries(id INTEGER PRIMARY KEY, name TEXT UNIQUE COLLATE NOCASE, code TEXT, source_file TEXT, created_at TEXT, updated_at TEXT);
@@ -83,6 +103,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone);
         """)
+        c.executescript(security.SCHEMA)
         for table, column, declaration in [
             ("companies","city","TEXT"),("companies","state","TEXT"),
             ("contacts","contact_type","TEXT"),("contacts","landline_no","TEXT"),
@@ -105,18 +126,14 @@ def init_db():
             "DELETE FROM user_country_access WHERE country_id NOT IN (SELECT id FROM countries) OR user_id NOT IN (SELECT id FROM users)",
             "DELETE FROM user_field_access WHERE user_id NOT IN (SELECT id FROM users)"))
         if removed: logging.info("Removed orphaned rows=%s",removed)
-        # The initial accounts are created on first start only; an admin deleting one must not bring it
-        # back with the documented default password.
+        # Bootstrap only an explicit admin; staff accounts and grants are assigned in user management.
         if not c.execute("SELECT 1 FROM users").fetchone():
+            password=os.environ.get("ADMIN_PASSWORD","")
+            if not 12<=len(password)<=256:
+                raise RuntimeError("An empty user database requires ADMIN_PASSWORD between 12 and 256 characters.")
             stamp=now()
-            c.execute("INSERT INTO users(username,password_hash,role,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",("admin",generate_password_hash(os.environ.get("ADMIN_PASSWORD","ChangeMe-Admin-2026!")),"ADMIN","ACTIVE",stamp,stamp))
-            c.execute("INSERT INTO users(username,password_hash,role,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",("kharla",generate_password_hash(os.environ.get("KHARLA_PASSWORD","ChangeMe-Kharla-2026!")),"USER","ACTIVE",stamp,stamp))
-        # Kharla is a standard user with all directory access until an admin edits her account
-        # (updated_at moves on); from then on the admin's access settings are never overridden.
-        kh=c.execute("SELECT id FROM users WHERE username='kharla' AND role='USER' AND updated_at IS created_at").fetchone()
-        if kh:
-            for r in c.execute("SELECT id FROM countries").fetchall(): c.execute("INSERT OR IGNORE INTO user_country_access(user_id,country_id) VALUES(?,?)",(kh["id"],r["id"]))
-            for r in c.execute("SELECT id FROM companies").fetchall(): c.execute("INSERT OR IGNORE INTO user_company_access VALUES(?,?)",(kh["id"],r["id"]))
+            c.execute("INSERT INTO users(username,password_hash,role,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                      ("admin",generate_password_hash(password),"ADMIN","ACTIVE",stamp,stamp))
     # Records imported before full-row capture get their XLSX columns filled in place, keeping IDs.
     try:
         filled=backfill_source_data(DB,DATA)
@@ -135,19 +152,33 @@ SESSION_IDLE=2*60*60; SESSION_MAX=12*60*60
 def password_version(password_hash):
     """Short fingerprint of the stored hash: changing the password ends every existing session."""
     return hashlib.sha256(password_hash.encode()).hexdigest()[:16]
-def start_session(u):
-    session.clear(); t=int(time.time())
-    session.update(uid=u["id"],pwv=password_version(u["password_hash"]),started=t,seen=t)
+def start_session(u,con=None):
+    t=int(time.time()); sid=secrets.token_urlsafe(32)
+    def store(c):
+        c.execute("DELETE FROM security_sessions WHERE started<=? OR seen<=?",(t-SESSION_MAX,t-SESSION_IDLE))
+        if session.get("sid"): c.execute("DELETE FROM security_sessions WHERE token_hash=?",(security.opaque(session["sid"]),))
+        c.execute("INSERT INTO security_sessions VALUES(?,?,?,?)",(security.opaque(sid),u["id"],t,t))
+    if con is None:
+        with db() as c: store(c)
+    else: store(con)
+    session.clear()
+    session.update(uid=u["id"],sid=sid,pwv=password_version(u["password_hash"]),started=t,seen=t)
 def current_user():
     # Looked up once per request (the context processor and each decorator ask again).
     if "current_user" not in g: g.current_user=load_current_user()
     return g.current_user
 def load_current_user():
     if "uid" not in session: return None
+    if not session.get("sid"): session.clear(); return None
     t=int(time.time())
     if t-session.get("seen",0)>SESSION_IDLE or t-session.get("started",0)>SESSION_MAX: session.clear(); return None
-    with db() as c: u=c.execute("SELECT id,username,first_name,last_name,role,status,password_hash FROM users WHERE id=?",(session["uid"],)).fetchone()
-    if not u or session.get("pwv")!=password_version(u["password_hash"]): session.clear(); return None
+    with db() as c:
+        row=c.execute("SELECT user_id,started,seen FROM security_sessions WHERE token_hash=?",(security.opaque(session["sid"]),)).fetchone()
+        u=c.execute("SELECT id,username,first_name,last_name,role,status,password_hash FROM users WHERE id=?",(session["uid"],)).fetchone()
+        if not row or row["user_id"]!=session["uid"] or t-row["started"]>SESSION_MAX or t-row["seen"]>SESSION_IDLE or not u or u["status"]!="ACTIVE" or session.get("pwv")!=password_version(u["password_hash"]):
+            c.execute("DELETE FROM security_sessions WHERE token_hash=?",(security.opaque(session["sid"]),))
+            session.clear(); return None
+        if t-row["seen"]>60: c.execute("UPDATE security_sessions SET seen=MAX(seen,?) WHERE token_hash=?",(t,security.opaque(session["sid"])))
     if t-session["seen"]>60: session["seen"]=t
     return {**{k:u[k] for k in ("id","username","first_name","last_name","role","status")},"display_name":display_name(u)}
 def login_required(fn):
@@ -177,36 +208,63 @@ def inject():
     except sqlite3.Error: return {"user":None}
 @app.route("/")
 def home(): return redirect(url_for("search")) if current_user() else redirect(url_for("login"))
-# Failed sign-ins kept in memory per process for 15 minutes: 5 per (username, IP) locks that pair,
-# and 30 per IP locks that address across all usernames (guessing many accounts).
-FAILED_LOGINS={}; LOGIN_LIMIT=5; IP_LOGIN_LIMIT=30; LOGIN_WINDOW=15*60
+# Shared failure reservations also count in-flight password checks across workers.
+LOGIN_LIMIT=5; IP_LOGIN_LIMIT=30; LOGIN_WINDOW=15*60; ACCOUNT_LOGIN_LIMIT=20; ACCOUNT_LOGIN_WINDOW=60
+PASSWORD_MAX=256
+def auth_reservation(username):
+    name=username.lower(); ip=client_ip()
+    return security.reserve(DB,[("auth-pair-"+security.opaque(name),ip,LOGIN_LIMIT,LOGIN_WINDOW),
+                                ("auth-ip",ip,IP_LOGIN_LIMIT,LOGIN_WINDOW),
+                                ("auth-account",name,ACCOUNT_LOGIN_LIMIT,ACCOUNT_LOGIN_WINDOW)])
+def rate_limited(seconds):
+    return render_template("error.html",message=f"Too many attempts or requests. Try again in {seconds} seconds."),429,{"Retry-After":str(seconds)}
+@app.before_request
+def request_limits():
+    # CSRF runs before this hook. Authentication failure reservations are separate from request volume.
+    endpoint=request.endpoint
+    if endpoint=="login":
+        limits=[("login-volume",client_ip(),app.config["SECURITY_RATE_LIMITS"]["login"],60)]
+    else:
+        if endpoint not in ("search","company","admin_export","import_preview","import_seed","import_upload_confirm","mapped_upload","mapped_review","mapped_confirm","imports_page"): return None
+        u=current_user() if session.get("uid") else None
+        if not u: return None
+        if endpoint in ("search","company"): limits=[("directory-volume",u["id"],app.config["SECURITY_RATE_LIMITS"]["directory"],60)]
+        elif endpoint=="admin_export" and u["role"]=="ADMIN": limits=[("export-volume",u["id"],app.config["SECURITY_RATE_LIMITS"]["export"],60)]
+        elif endpoint in ("import_preview","import_seed","import_upload_confirm","mapped_upload","mapped_review","mapped_confirm") or (endpoint=="imports_page" and request.method=="POST"):
+            if u["role"]!="ADMIN": return None
+            limits=[("import-volume",u["id"],app.config["SECURITY_RATE_LIMITS"]["import"],60)]
+        else: return None
+    try: token,retry=security.reserve(DB,limits)
+    except sqlite3.OperationalError:
+        return render_template("error.html",message="The application is busy. Please try again shortly."),503,{"Retry-After":"5"}
+    if retry: return rate_limited(retry)
 # Checked when the username is unknown, so both cases take the same time (no username discovery).
 DUMMY_HASH=generate_password_hash(secrets.token_hex(16))
 @app.route("/login",methods=["GET","POST"])
 def login():
     if request.method=="POST":
-        username=request.form.get("username","").strip(); ip=client_ip()
-        key=(username.lower(),ip); ipkey=("*",ip); t=time.time()
-        recent=[x for x in FAILED_LOGINS.get(key,[]) if t-x<LOGIN_WINDOW]
-        ip_recent=[x for x in FAILED_LOGINS.get(ipkey,[]) if t-x<LOGIN_WINDOW]
-        if len(recent)>=LOGIN_LIMIT or len(ip_recent)>=IP_LOGIN_LIMIT:
+        username=request.form.get("username","").strip(); ip=client_ip(); password=request.form.get("password","")
+        if len(username)>64 or len(password)>PASSWORD_MAX: abort(400)
+        try: attempt,retry=auth_reservation(username)
+        except sqlite3.OperationalError:
+            return render_template("error.html",message="Sign-in is temporarily unavailable. Please try again shortly."),503,{"Retry-After":"5"}
+        if retry:
             logging.warning("Throttled login username=%s ip=%s",username,ip)
-            flash("Too many failed sign-in attempts. Try again in 15 minutes.","error")
-            return render_template("login.html"),429
+            return rate_limited(retry)
         with db() as c: u=c.execute("SELECT * FROM users WHERE username=? COLLATE NOCASE",(username,)).fetchone()
-        valid=check_password_hash(u["password_hash"] if u else DUMMY_HASH,request.form.get("password",""))
+        valid=check_password_hash(u["password_hash"] if u else DUMMY_HASH,password)
         if u and valid and u["status"]=="ACTIVE":
-            FAILED_LOGINS.pop(key,None)
+            security.release(DB,attempt,username)
             with db() as c: c.execute("UPDATE users SET last_login_at=? WHERE id=?",(now(),u["id"]))
             start_session(u); logging.info("Successful login user=%s",u["username"]); return redirect(url_for("admin_dashboard") if u["role"]=="ADMIN" else url_for("search"))
-        if len(FAILED_LOGINS)>10000:
-            for k in [k for k,v in FAILED_LOGINS.items() if t-v[-1]>=LOGIN_WINDOW]: del FAILED_LOGINS[k]
-        FAILED_LOGINS[key]=recent+[t]; FAILED_LOGINS[ipkey]=ip_recent+[t]
         logging.warning("Failed login username=%s ip=%s",username,ip); flash("Invalid username or password.","error")
     return render_template("login.html")
 @app.post("/logout")
 @login_required
-def logout(): session.clear(); return redirect(url_for("login"))
+def logout():
+    with db() as c: c.execute("DELETE FROM security_sessions WHERE token_hash=?",(security.opaque(session["sid"]),))
+    logging.info("User %s logged out",current_user()["username"])
+    session.clear(); return redirect(url_for("login"))
 FIELD_COLUMNS={"company_name":"co.company_name","city":"co.city","state":"co.state","country":"cn.name","network":"co.network","contact_type":"ct.contact_type","name":"ct.name","job_position":"ct.job_position","email":"ct.email","phone":"ct.phone","landline_no":"ct.landline_no","address":"ct.address"}
 FIELD_LABELS={"company_name":"Company Name Entity","city":"City","state":"State","country":"Country","network":"Network","contact_type":"Contact Type","name":"Name","job_position":"Job Position","email":"Email","phone":"Phone","landline_no":"Landline No","address":"Address"}
 # XLSX sales columns (field keys as built by utils.fields.columns) granted per USER via user_field_access.
@@ -272,28 +330,32 @@ def page_links(page,pages):
     return out
 PAGE_SIZE=20; MAX_QUERY=200; MAX_TERMS=8
 @app.route("/account/password",methods=["GET","POST"])
-@login_required
+@admin_required
 def account_password():
     u=current_user()
     if request.method=="POST":
-        # Wrong current passwords count toward the same throttle as failed sign-ins.
-        key=(u["username"].lower(),client_ip()); t=time.time()
-        recent=[x for x in FAILED_LOGINS.get(key,[]) if t-x<LOGIN_WINDOW]
-        if len(recent)>=LOGIN_LIMIT:
-            flash("Too many incorrect attempts. Try again in 15 minutes.","error"); return render_template("account_password.html"),429
-        with db() as c: row=c.execute("SELECT id,password_hash FROM users WHERE id=?",(u["id"],)).fetchone()
+        # Admin current-password checks share the persistent login failure limits.
         current=request.form.get("current_password",""); new=request.form.get("new_password","")
+        if len(current)>PASSWORD_MAX or len(new)>PASSWORD_MAX or len(request.form.get("confirm_password",""))>PASSWORD_MAX: abort(400)
+        try: attempt,retry=auth_reservation(u["username"])
+        except sqlite3.OperationalError:
+            return render_template("error.html",message="Password changes are temporarily unavailable. Please try again shortly."),503,{"Retry-After":"5"}
+        if retry: return rate_limited(retry)
+        with db() as c: row=c.execute("SELECT id,password_hash FROM users WHERE id=?",(u["id"],)).fetchone()
         if not check_password_hash(row["password_hash"],current):
-            FAILED_LOGINS[key]=recent+[t]; logging.warning("Failed password change user=%s ip=%s",u["username"],key[1])
+            logging.warning("Failed password change user=%s ip=%s",u["username"],client_ip())
             flash("Your current password is incorrect.","error")
-        elif len(new)<12: flash("The new password must be at least 12 characters.","error")
-        elif new!=request.form.get("confirm_password",""): flash("The new passwords do not match.","error")
-        elif new==current: flash("Choose a password different from your current one.","error")
         else:
+            security.release(DB,attempt,u["username"])
+            if len(new)<12: flash("The new password must be at least 12 characters.","error"); return render_template("account_password.html")
+            if new!=request.form.get("confirm_password",""): flash("The new passwords do not match.","error"); return render_template("account_password.html")
+            if new==current: flash("Choose a password different from your current one.","error"); return render_template("account_password.html")
             # updated_at is left alone: it marks admin edits (see the kharla rule in init_db).
             with db() as c:
                 c.execute("UPDATE users SET password_hash=? WHERE id=?",(generate_password_hash(new),u["id"]))
-                start_session(c.execute("SELECT id,password_hash FROM users WHERE id=?",(u["id"],)).fetchone())
+                c.execute("DELETE FROM security_sessions WHERE user_id=?",(u["id"],))
+                security.clear_auth(c,u["username"])
+                start_session(c.execute("SELECT id,password_hash FROM users WHERE id=?",(u["id"],)).fetchone(),c)
             logging.info("User %s changed own password",u["username"])
             flash("Password changed. Any other devices signed in to your account have been signed out.","success")
             return redirect(url_for("account_password"))
@@ -429,8 +491,8 @@ def users():
 def user_create():
     if request.method=="POST":
         username=request.form.get("username","").strip(); password=request.form.get("password",""); names=name_fields(request.form)
-        if not re.fullmatch(r"[A-Za-z0-9_.-]{3,64}",username) or len(password)<12:
-            flash("Use a 3–64 character username and a password of at least 12 characters.","error")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{3,64}",username) or not 12<=len(password)<=PASSWORD_MAX:
+            flash("Use a 3–64 character username and a password of 12–256 characters.","error")
         elif not names:
             flash(f"First and last name must be at most {NAME_MAX} characters.","error")
         else:
@@ -462,8 +524,8 @@ def user_edit(uid):
             if role not in ("USER","ADMIN","FULL_ACCESS") or status not in ("ACTIVE","DISABLED"): abort(400)
             pw=request.form.get("password",""); names=name_fields(request.form)
             # Validate everything before writing, so a rejected save changes nothing.
-            if pw and len(pw)<12:
-                flash("Password must be at least 12 characters. No changes were saved.","error"); return redirect(url_for("user_edit",uid=uid))
+            if pw and not 12<=len(pw)<=PASSWORD_MAX:
+                flash("Password must be 12–256 characters. No changes were saved.","error"); return redirect(url_for("user_edit",uid=uid))
             if not names:
                 flash(f"First and last name must be at most {NAME_MAX} characters. No changes were saved.","error"); return redirect(url_for("user_edit",uid=uid))
             admin=current_user()
@@ -472,8 +534,11 @@ def user_edit(uid):
             before=access_summary(c,uid)
             c.execute("UPDATE users SET first_name=?,last_name=?,role=?,status=?,updated_at=? WHERE id=?",(*names,role,status,now(),uid))
             if pw: c.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",(generate_password_hash(pw),now(),uid))
-            # A password change ends every session of that account; keep the admin's own session going.
-            if pw and uid==admin["id"]: start_session(c.execute("SELECT id,password_hash FROM users WHERE id=?",(uid,)).fetchone())
+            # Re-enabling an account cannot revive a cookie from before disablement.
+            if pw or role!=target["role"] or status!=target["status"]:
+                c.execute("DELETE FROM security_sessions WHERE user_id=?",(uid,))
+            if pw: security.clear_auth(c,target["username"])
+            if pw and uid==admin["id"]: start_session(c.execute("SELECT id,password_hash FROM users WHERE id=?",(uid,)).fetchone(),c)
             c.execute("DELETE FROM user_country_access WHERE user_id=?",(uid,)); c.execute("DELETE FROM user_company_access WHERE user_id=?",(uid,))
             known={r["id"] for r in c.execute("SELECT id FROM countries")}
             # "All companies" for a country also grants the country itself.
@@ -537,6 +602,17 @@ def record_import(source,country,status,result=None):
         if result: c.execute("INSERT INTO imports(source_file,country,status,records_processed,records_imported,duplicates_found,errors_found,imported_at) VALUES(?,?,?,?,?,?,?,?)",
                              (source,country,status,result["processed"],result["imported"],result["duplicates"],len(result["errors"]),now()))
         else: c.execute("INSERT INTO imports(source_file,country,status,errors_found,imported_at) VALUES(?,?,?,?,?)",(source,country,status,1,now()))
+def import_error_message(error):
+    """Expose only known workbook validation messages; correlate unexpected failures with the log."""
+    message=str(error)
+    safe={"Workbook is empty","Missing required column(s): company_name",
+          f"The workbook has more than {profile_import.MAX_ROWS} rows",
+          "Unknown import mode","The file has errors that block the import."}
+    if type(error) is ValueError and message in safe: return message
+    reference=secrets.token_hex(6)
+    logging.exception("Unexpected import error reference=%s",reference)
+    return f"The workbook could not be processed. Please try again or contact an administrator. Reference: {reference}."
+
 def run_import(path,source,country):
     """Back up, then replace the country's data with the workbook; the outcome goes to import history."""
     try: backup=backup_db(country)
@@ -546,7 +622,7 @@ def run_import(path,source,country):
     try: result=import_workbook(path,DB,country,replace_country=True)
     except Exception as e:
         logging.exception("Import failed file=%s",source); record_import(source,country,"FAILED")
-        flash(f"{source}: import rejected; previous active dataset was kept. {e}","error"); return
+        flash(f"{source}: import rejected; previous active dataset was kept. {import_error_message(e)}","error"); return
     record_import(source,country,"COMPLETED",result); ch=result["changes"]
     logging.info("Admin %s imported %s rows=%s added=%s removed=%s backup=%s",current_user()["username"],source,result["imported"],len(ch["added"]),len(ch["removed"]),backup)
     flash(f"{result['country']} replaced from {source}: {result['imported']} contact rows, {len(ch['added'])} companies added, {len(ch['removed'])} removed. Backup saved as {backup}.","success")
@@ -556,7 +632,7 @@ def preview_import(path,source,country,confirm):
     try: result=import_workbook(path,DB,country,replace_country=True,dry_run=True)
     except Exception as e:
         logging.warning("Import preview failed file=%s: %s",source,e)
-        flash(f"{source} cannot be imported: {e}","error"); return None
+        flash(f"{source} cannot be imported: {import_error_message(e)}","error"); return None
     with db() as c:
         cid=c.execute("SELECT id FROM countries WHERE name=? COLLATE NOCASE",(result["country"],)).fetchone()
         # Users who get this country company by company will not see companies the import adds.
@@ -702,7 +778,7 @@ def mapped_review(profile):
     except Exception as e:
         logging.warning("Mapped import preview failed profile=%s file=%s: %s",p["name"],path.name,e)
         path.unlink(missing_ok=True)
-        flash(f"{path.name[13:]} cannot be read: {e}","error"); return redirect(url_for("imports_page"))
+        flash(f"{path.name[13:]} cannot be read: {import_error_message(e)}","error"); return redirect(url_for("imports_page"))
     with db() as c:
         cid=c.execute("SELECT id FROM countries WHERE name=? COLLATE NOCASE",(p["country"],)).fetchone()
         partial=[] if not cid else c.execute("""SELECT u.id,u.username FROM users u JOIN user_country_access a ON a.user_id=u.id
@@ -725,7 +801,7 @@ def mapped_confirm(profile):
     except Exception as e:
         logging.exception("Mapped import failed profile=%s file=%s",p["name"],source)
         with db() as c: c.execute("INSERT INTO imports(source_file,country,status,errors_found,imported_at) VALUES(?,?,?,?,?)",(label,p["country"],"FAILED",1,now()))
-        flash(f"Import failed and was rolled back; nothing was changed. {e}","error"); return back
+        flash(f"Import failed and was rolled back; nothing was changed. {import_error_message(e)}","error"); return back
     s=done["summary"]; r=done["result"]
     with db() as c:
         c.execute("INSERT INTO imports(source_file,country,status,records_processed,records_imported,duplicates_found,errors_found,imported_at) VALUES(?,?,?,?,?,?,?,?)",

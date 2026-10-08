@@ -83,7 +83,7 @@ Mapping profiles are stored in `utils/import_profiles/`. A standard import rejec
 4. Select the fields and sales columns they may view.
 5. Save the changes.
 
-Admins can also reset passwords and disable accounts. An admin cannot remove their own admin access, disable their own account, or delete it.
+Only admins can change passwords: they can reset account passwords in user management and change their own password from the account menu. USER and FULL_ACCESS accounts must ask an admin for a password reset. Admins can also disable accounts. An admin cannot remove their own admin access, disable their own account, or delete it.
 
 ### 4. Review the directory
 
@@ -131,16 +131,11 @@ The app creates `directory.db` automatically.
 
 ## First-time accounts
 
-When the database has no users, the app creates:
+When the database has no users, the app requires an explicit `ADMIN_PASSWORD` of 12–256 characters and creates only `admin`. There is no fallback password and no automatically granted staff account.
 
-- `admin` — administrator
-- `kharla` — standard user with initial access across the directory
+Create a separate USER account for each staff member in user management, then assign their required country, company, and sales-field access. Existing accounts and grants are preserved; startup no longer expands any named user's access. Disable a former shared account only after individual access has been verified.
 
-Set `ADMIN_PASSWORD`, `KHARLA_PASSWORD`, and a strong, persistent `SECRET_KEY` before the first launch. If you use the built-in demonstration passwords, change them immediately.
-
-These settings apply to initial account creation; they do not reset existing passwords. Deleted starter accounts are not automatically recreated.
-
-Kharla's country and company assignments are refreshed at startup until an admin edits her account. After that, admins manage her access normally.
+`ADMIN_PASSWORD` applies only to initial account creation; it does not reset existing passwords. Admins manage all staff password resets. `KHARLA_PASSWORD` is no longer used.
 
 ## Backups
 
@@ -161,7 +156,7 @@ Also back up the database before upgrades.
 | --- | --- |
 | A Python package is missing | Activate the virtual environment and run `pip install -r requirements.txt`. |
 | Sign-in fails | Ask an admin to check that the account is active or reset its password. |
-| Sign-in is temporarily blocked | Wait 15 minutes after repeated failed attempts. |
+| Sign-in is temporarily blocked | Wait for the retry time shown. Repeated failures can block a username/IP or IP for up to 15 minutes; an account-wide burst limit lasts at most 60 seconds. |
 | A company is missing | Ask an admin to check both country and company assignments. |
 | A field is missing | Ask an admin to check field access. |
 | An import fails | Check that the workbook opens, has a company-name column, and uses the correct import method. Review `app.log`. |
@@ -171,14 +166,17 @@ Also back up the database before upgrades.
 
 For deployment, use HTTPS, a production WSGI server, regular backups, and monitoring.
 
-- Set a persistent `SECRET_KEY`. Otherwise, the app creates one in `.secret_key`.
-- Set `COOKIE_SECURE=1` when using HTTPS.
-- If your proxy provides the visitor's IP address, configure `CLIENT_IP_HEADER` to match that header.
+- Set `APP_ENV=production`, a persistent random `SECRET_KEY` of at least 32 characters, and keep debug disabled. Production cookies default to secure; an explicit `COOKIE_SECURE=0` is rejected. Development defaults to HTTP-compatible cookies and can persist a generated key locally; it fails startup if that key cannot be stored.
+- If your proxy supplies the visitor's IP, set `CLIENT_IP_HEADER` and `TRUSTED_PROXY_CIDRS` to verified immediate/proxy-chain addresses (comma-separated IP networks). A header without explicit trusted ranges fails startup. Headers from untrusted peers are ignored; forwarded chains are walked from the nearest proxy. Do not use wildcard trust ranges or guess hosting proxy addresses.
 - Sessions expire after 2 hours of inactivity or 12 hours total.
-- Changing a password signs that user out of all sessions.
+- Sessions also have server-side revocation records. Logout revokes that browser's session; password resets, role changes, and disable/re-enable revoke the affected account's sessions. An admin resetting their own password keeps a newly issued session.
 - Passwords are hashed, forms have CSRF protection, and database queries are parameterized.
-- Repeated failed sign-ins are temporarily blocked.
+- Password inputs are bounded at 256 characters; sign-in usernames at 64. Passwords are never silently truncated.
+- Atomic SQLite reservations preserve authentication limits across restarts and workers: 5 failures per username/IP and 30 per IP within 15 minutes; 20 per account within 60 seconds. In-flight attempts count too; successful checks release their reservation and clear account/pair history, retaining prior IP-wide failures. Rejected retries do not extend the window. Admin password resets also clear account/pair history.
+- Request limits use rolling 60-second windows: 60 login-page/sign-in requests per IP; 120 search/detail requests per user; 6 CSV exports per admin; 20 import operations per admin. CSRF rejects invalid forms before this request limiter. `SECURITY_RATE_LIMITS` in app configuration permits workload tuning. Replies include `Retry-After`; busy limiter storage returns 503 rather than bypassing controls. Static assets and logout are outside these volume limits.
 - Admin activity is recorded in `app.log`.
+
+Before activating this upgrade, back up the database, verify hosting/proxy configuration in staging, and expect everyone to sign in again once. Security tables are additive; do not roll back to cookie-only authentication that could accept revoked cookies. These application controls do not provide network-level DDoS protection.
 
 ## Technical reference
 
@@ -194,12 +192,21 @@ Built with Flask, Jinja templates, and SQLite.
 
 Imports preserve original row data and source information. Similar company names are flagged as possible duplicates for review.
 
-Run the isolated end-to-end checks with:
+Run the Release 1 security checks with synthetic data and CSRF enabled:
+
+```bash
+python tests/test_security_release1.py
+python tests/test_security_controls.py
+```
+
+This suite copies only application code and assets to a temporary folder. It does not read the existing database, business workbooks, credentials, or logs, and does not call the deployment route. Synthetic test artifacts are retained in the temporary folder printed at completion.
+
+The existing end-to-end checks below copy the current database and data fixtures, so run them only with approved test fixtures:
 
 ```bash
 python tests/test_app.py
 python tests/test_mapped_import.py
 ```
 
-Release details are in `VERSION_*_NOTES.md`. The latest release referenced by this guide is `VERSION_10_NOTES.md`.
+Release history is consolidated in [Version 2 notes](VERSION_2_NOTES.md). Current setup and security instructions are documented in this guide.
 ````

@@ -14,11 +14,12 @@ for name in ("app.py","utils","templates","static","data","directory.db"):
     elif p.exists(): shutil.copy2(p,TMP/name)
 sys.path.insert(0,str(TMP)); os.chdir(TMP)
 from werkzeug.security import generate_password_hash
+os.environ.update(APP_ENV="development",CLIENT_IP_HEADER="",TRUSTED_PROXY_CIDRS="",ADMIN_PASSWORD="Synthetic-Bootstrap-Password!")
 A=importlib.import_module("app")
 from utils import profile_import as P
 from utils.importer import import_workbook
 from utils.fields import build_company_detail
-A.app.config.update(WTF_CSRF_ENABLED=False,TESTING=True)
+A.app.config.update(WTF_CSRF_ENABLED=False,TESTING=True,SECURITY_RATE_LIMITS={"login":10000,"directory":10000,"export":10000,"import":10000})
 
 results=[]
 def check(name,cond):

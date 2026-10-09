@@ -596,3 +596,15 @@ tr.row-flag td{background:var(--warn-bg)}
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+/* Independent administrator verification and progressive disclosure. */
+.admin-verification{min-width:0;margin:16px 0;padding:16px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.admin-verification legend{padding:0 6px;font-size:13px;font-weight:600;color:var(--ink-2)}
+.admin-verification .form-grid label{margin-bottom:12px}
+.admin-verification .tiny{margin-bottom:0}
+.admin-verification[hidden],.delete-form[hidden],[data-delete-open][hidden],[data-delete-cancel][hidden]{display:none}
+.mfa-policy-form{margin-top:18px}
+.mfa-policy-form button:disabled{opacity:.55;cursor:not-allowed}
+.security-recovery{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.security-recovery summary{cursor:pointer;font-weight:600}
+.security-actions{display:flex;flex-wrap:wrap;gap:10px}

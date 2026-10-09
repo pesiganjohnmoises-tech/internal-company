@@ -103,7 +103,7 @@ for mode in ("missing","invalid","expired"):
 
 # Real valid forms, imports and permission checks with CSRF left enabled.
 response=admin.post("/admin/users/create",data={"username":"newuser","first_name":"Test","last_name":"User",
-                    "password":"Synthetic-New-Password!","csrf_token":token(admin)})
+                    "password":"Synthetic-New-Password!","current_password":"Synthetic-Admin-Password!","csrf_token":token(admin)})
 with A.db() as con: new=con.execute("SELECT id FROM users WHERE username='newuser'").fetchone()
 check("valid CSRF user creation",response.status_code==302 and new is not None)
 response=admin.post(f"/admin/users/{new['id']}",data={"role":"USER","status":"ACTIVE","first_name":"Changed",
@@ -126,7 +126,7 @@ for role in ("USER","FULL_ACCESS"):
     check(role+" cannot reset password through admin route",response.status_code==403 and snapshot()==before)
 with A.db() as con: con.execute("UPDATE users SET role='USER' WHERE id=?",(uid,))
 check("admin menu keeps password change",b'href="/account/password"' in admin.get("/search").data)
-response=admin.post(f"/admin/users/{uid}",data={"role":"USER","status":"ACTIVE","password":"Synthetic-Reset-Password!",
+response=admin.post(f"/admin/users/{uid}",data={"role":"USER","status":"ACTIVE","password":"Synthetic-Reset-Password!","current_password":"Synthetic-Admin-Password!",
                     "csrf_token":token(admin)})
 check("admin resets user password",response.status_code==302)
 check("admin reset invalidates existing user session",user.get("/search").status_code==302)

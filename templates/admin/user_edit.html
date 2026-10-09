@@ -1,5 +1,19 @@
 {% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}{% from "_icons.html" import icon %}
 {% block title %}User settings · Internal Company Directory{% endblock %}
+{% macro admin_verification(required=false, reason='Confirm this change with your own administrator credentials.') %}
+<fieldset class="admin-verification" data-admin-verification>
+  <legend>Confirm with your admin credentials</legend>
+  <p class="muted">{{reason}}</p>
+  <div class="form-grid">
+    <label>Your admin password<input type="password" name="current_password" autocomplete="current-password" maxlength="256" data-verification-required {% if required %}required{% endif %}></label>
+    {% if config.MFA_ENABLED %}
+    <label>Verification method<select name="method"><option value="totp">Authenticator code</option><option value="recovery">Recovery code</option></select></label>
+    <label>Your fresh verification code<input name="code" autocomplete="one-time-code" maxlength="24" data-verification-required {% if required %}required{% endif %}></label>
+    {% endif %}
+  </div>
+  {% if config.MFA_ENABLED %}<p class="tiny">Use a fresh code from your authenticator or an unused recovery code. Codes are used once; wait for the next code if you just signed in.</p>{% endif %}
+</fieldset>
+{% endmacro %}
 {% block content %}
 {% set role_names={'USER':'User','FULL_ACCESS':'Full Access','ADMIN':'Admin'} %}
 {% set role=target.role if target else 'USER' %}
@@ -28,7 +42,7 @@
 
 {{ admin_nav('users') }}
 
-<form method="post" class="user-form" data-role="{{role}}">
+<form method="post" class="user-form" data-role="{{role}}"{% if target %} data-verification="account" data-initial-role="{{role}}" data-initial-status="{{target.status}}"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
 
   <section class="admin-panel settings-card" aria-labelledby="card-details">
@@ -116,6 +130,8 @@
   </section>
   {% endif %}
 
+  {{ admin_verification(required=not target, reason='Use your own admin credentials to create this account.' if target is none else 'Only required to reset the password or change the user type or sign-in status. Use your own credentials; name and access edits need no verification.') }}
+
   <div class="save-bar">
     <span class="muted">Changes apply when you save.</span>
     <button class="primary" type="submit">{{'Save changes' if target else 'Create user'}}</button>
@@ -125,22 +141,23 @@
 {% if config.MFA_ENABLED and target %}
 <section class="admin-panel settings-card" aria-labelledby="card-mfa">
   <header class="card-head"><div><h2 id="card-mfa">Sign-in security</h2>
-    <p class="muted">{{'MFA is required' if mfa_policy.required else 'MFA is optional'}}. {{'An authenticator is enrolled.' if mfa_policy.enabled else ('Enrollment is pending.' if mfa_policy.required else 'No authenticator is enrolled.')}}</p>
+    <div class="user-badges"><span class="badge neutral">MFA {{'required' if mfa_policy.required else 'optional'}}</span><span class="badge {{'good' if mfa_policy.enabled else 'neutral'}}">{{'Authenticator enrolled' if mfa_policy.enabled else ('Enrollment pending' if mfa_policy.required or mfa_policy.recovery_required else 'No authenticator enrolled')}}</span></div>
   </div></header>
   {% if mfa_policy.recovery_required %}<p class="notice">Recovery is pending. This user must enroll again before directory access, even if the MFA policy is optional.</p>{% endif %}
   {% if target.role=='ADMIN' %}
     <p>MFA is mandatory for administrators and cannot be made optional.</p>
   {% else %}
-    <form method="post" action="{{url_for('user_mfa_policy',uid=target.id)}}" class="loginform">
+    <form method="post" action="{{url_for('user_mfa_policy',uid=target.id)}}" class="mfa-policy-form" data-verification="policy" data-initial-required="{{'1' if mfa_policy.required else '0'}}">
       <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
-      <label>MFA requirement<select name="required"><option value="0" {% if not mfa_policy.required %}selected{% endif %}>Optional</option><option value="1" {% if mfa_policy.required %}selected{% endif %}>Required</option></select></label>
-      <p class="muted">Changing this requirement signs the user out on every device. Users with required MFA must complete enrollment before accessing the directory.</p>
-      <p class="tiny">Making MFA optional preserves any enrolled authenticator and recovery codes. Enrolled accounts still verify a code at sign-in.</p>
+      <div class="form-grid"><label>MFA requirement<select name="required"><option value="0" {% if not mfa_policy.required %}selected{% endif %}>Optional</option><option value="1" {% if mfa_policy.required %}selected{% endif %}>Required</option></select></label></div>
+      <p class="muted">Changing this setting signs the user out on every device. Required MFA must be enrolled before directory access.</p>
+      <p class="tiny">Optional MFA keeps existing authenticators and recovery codes. Enrolled users still verify a code at sign-in.</p>
+      {{ admin_verification(reason='Use your own admin credentials to change the MFA requirement for this user.') }}
       <button class="primary" type="submit">Save MFA requirement</button>
     </form>
   {% endif %}
   {% if target.id!=user.id %}
-  <details><summary>Recover a lost authenticator</summary>
+  <details class="security-recovery"><summary>Recover a lost authenticator</summary>
     <p>First verify the account owner's identity through your approved company procedure. This confirmation records your acknowledgement; it does not perform identity verification.</p>
     <form method="post" action="{{url_for('user_mfa_reset',uid=target.id)}}" class="loginform">
       <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
@@ -163,7 +180,12 @@
     <h2 id="card-danger">Delete user</h2>
     <p class="muted">Permanently removes this account and all of its access settings.</p>
   </div>
-  <form method="post" action="{{url_for('user_delete',uid=target.id)}}" data-confirm="Delete this user permanently? This cannot be undone." class="delete-form"><input type="hidden" name="csrf_token" value="{{csrf_token()}}"><button class="danger">Delete user</button></form>
+  <button type="button" class="danger" data-delete-open aria-expanded="false" aria-controls="user-delete-form" hidden>Delete user...</button>
+  <form id="user-delete-form" method="post" action="{{url_for('user_delete',uid=target.id)}}" data-confirm="Delete this user permanently? This cannot be undone." class="delete-form" data-verification="delete">
+    <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+    {{ admin_verification(required=true, reason='Use your own admin credentials to permanently delete this account. This cannot be undone.') }}
+    <div class="security-actions"><button type="button" class="secondary" data-delete-cancel hidden>Cancel</button><button class="danger" type="submit">Delete user permanently</button></div>
+  </form>
 </section>
 {% endif %}
 

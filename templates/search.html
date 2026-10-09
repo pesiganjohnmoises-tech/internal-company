@@ -6,11 +6,12 @@
   {% if not compact %}<div class="searchbar searchbar-lg">{% endif %}
   {{icon('search',20)}}
   <label class="sr-only" for="directory-query">Search the directory</label>
-  <input id="directory-query" name="q" value="{{q}}" placeholder="Agent name, agent ID, city, network or contact…" autocomplete="off"{% if not q and not country %} autofocus{% endif %}>
+  <input id="directory-query" name="q" value="{{q}}" placeholder="Agent name, agent ID or contact…" autocomplete="off" aria-describedby="search-hint"{% if not q and not country %} autofocus{% endif %}>
   {% if q or country %}<a class="clear-search" href="{{url_for('search')}}">Clear</a>{% endif %}
   {% if not compact %}</div>{% endif %}
   <button class="primary">Search</button>
 </form>
+<p class="tiny" id="search-hint">Enter at least 5 characters to search. Spaces do not count.</p>
 {%- endmacro %}
 {% macro status_line(s) -%}
 {% if s.flags %}<span class="status-line">{% for i in s.flags %}<span class="status-item tone-{{i.tone}}">{{i.text}}</span>{% endfor %}</span>{% endif %}
@@ -85,8 +86,8 @@
 {% else %}
 <div class="empty">
   <div class="empty-icon" aria-hidden="true">{{icon('search',24)}}</div>
-  <h3>{% if q %}No companies match “{{q}}”{% if country %} in {{country}}{% endif %}{% else %}No companies you can see in {{country}}{% endif %}</h3>
-  <p>Check the spelling, try fewer words, or search by a different detail such as a city, agent ID or contact name.</p>
+  <h3>{% if too_many %}Refine your search{% elif lookup_required %}Enter a specific search{% elif q %}No companies match “{{q}}”{% if country %} in {{country}}{% endif %}{% else %}No companies you can see in {{country}}{% endif %}</h3>
+  {% if too_many %}<p>Too many matches. Enter a more specific company name, agent ID, or contact detail.</p>{% elif lookup_required %}<p>Enter a company name, agent ID or contact detail with at least 5 characters. Country filters can narrow your search.</p>{% elif short_query %}<p>Enter at least 5 characters to search.</p>{% elif country_only %}<p>Country names alone cannot be searched. Add an agent name, agent ID or contact detail.</p>{% else %}<p>Check the spelling, try fewer words, or search by agent name, agent ID or contact name.</p>{% endif %}
 </div>
 {% endif %}
 {% endif %}

@@ -276,3 +276,17 @@ not authorization to enable the production MFA flag or migrate a production data
 Step 8's prepared configuration, staging sequence and outstanding hosting decisions
 are in [PythonAnywhere MFA preparation](MFA_PYTHONANYWHERE.md). Its examples contain
 placeholders and have not been applied to a hosting account.
+
+## Fresh verification for administrator account changes
+
+Creating accounts, changing roles/status, resetting passwords, deleting users and
+changing MFA requirements now require the acting administrator's current password.
+When MFA is enabled, also enter a fresh authenticator code or an unused recovery
+code. A code already used at sign-in cannot be reused; wait for the next code.
+Name and directory/sales permission edits retain their existing workflow. Saving
+an unchanged MFA policy requires no verification and consumes no code.
+
+Verification and sensitive account writes commit together. Failed writes leave
+account settings and factor usage unchanged. No schema migration or new package is
+needed for this change. Run `python tests/test_admin_verification.py` for synthetic
+regression checks; deployment remains a separate authorized operation.

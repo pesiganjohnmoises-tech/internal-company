@@ -96,9 +96,13 @@ def backfill_source_data(db_path,data_dir):
                         con.execute(f"UPDATE {table} SET source_data=? WHERE id=?",(source_record(labels,row),r["id"])); filled+=1
         con.commit(); return filled
     finally: con.close()
-def import_workbook(path,db_path,country,replace_country=False,dry_run=False):
+class ReplacementValidationError(ValueError):
+    """Safe, generated validation details for a rejected standard replacement."""
+
+def import_workbook(path,db_path,country,replace_country=False,dry_run=False,on_success=None):
     """Load a workbook into one country. The result's "changes" lists companies added and removed.
-    dry_run runs the whole import inside the transaction and rolls it back (import preview)."""
+    dry_run runs the whole import inside the transaction and rolls it back (import preview).
+    on_success(con,result) runs before commit; it must not commit the connection."""
     wb=load_workbook(path,read_only=True,data_only=True)
     try:
         ws=wb.active; rows=ws.iter_rows(values_only=True)
@@ -117,6 +121,11 @@ def import_workbook(path,db_path,country,replace_country=False,dry_run=False):
             vals["source_data"]=source_record(labels,row)
             data.append((rownum,vals))
     finally: wb.close()
+    if replace_country:
+        if errors:
+            raise ReplacementValidationError(f"Replacement cancelled: {len(errors)} invalid row(s). Fix the workbook and preview again. "+"; ".join(errors[:5]))
+        if not data:
+            raise ReplacementValidationError("Replacement cancelled: no valid records. Supply a non-empty workbook; use Delete country for intentional removal.")
     effective_country=country or detect_country(Path(path).name)
     con=sqlite3.connect(db_path); con.row_factory=sqlite3.Row
     # Must be set outside the transaction; without it deletes leave orphaned contacts and access rows.
@@ -168,9 +177,12 @@ def import_workbook(path,db_path,country,replace_country=False,dry_run=False):
             inserted+=1
         con.execute("UPDATE countries SET source_file=?,updated_at=? WHERE id=?",(Path(path).name,now,cid))
         changes["contacts_after"]=inserted
+        result={"processed":len(data)+len(errors),"imported":inserted,"duplicates":0,"errors":errors,"country":effective_country,"changes":changes}
         if dry_run: con.rollback()
-        else: con.commit()
+        else:
+            if on_success: on_success(con,result)
+            con.commit()
     except Exception:
         con.rollback(); raise
     finally: con.close()
-    return {"processed":len(data)+len(errors),"imported":inserted,"duplicates":0,"errors":errors,"country":effective_country,"changes":changes}
+    return result

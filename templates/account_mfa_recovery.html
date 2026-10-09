@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Save recovery codes · Internal Company Directory{% endblock %}
+{% block content %}
+<section class="login-shell account-shell">
+  <div class="eyebrow">AUTHENTICATOR ENROLLED</div>
+  <h1 class="account-title">Save your recovery codes</h1>
+  <p>Write these down or save them in a safe place separate from your phone. Each code can be used once when you cannot access your authenticator.</p>
+  <p class="notice">These codes are displayed only now. You cannot retrieve them after leaving this page.</p>
+  <ul class="mfa-recovery">{% for code in codes %}<li><code>{{code}}</code></li>{% endfor %}</ul>
+  <p class="tiny">Your other signed-in devices have been signed out. Keep these codes private.</p>
+  <a class="back" href="{{url_for('account_mfa')}}">I have saved my recovery codes →</a>
+</section>
+{% endblock %}

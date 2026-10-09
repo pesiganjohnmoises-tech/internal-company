@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Account security · Internal Company Directory{% endblock %}
+{% block content %}
+<a class="back" href="{{url_for('home')}}">← Back</a>
+<section class="login-shell account-shell">
+  <div class="eyebrow">YOUR ACCOUNT</div>
+  <h1 class="account-title">Account security</h1>
+  <p class="muted">Authenticator setup for <strong>{{enrollment_user.display_name}}</strong> (@{{enrollment_user.username}}).</p>
+  {% if error %}<p class="notice error" role="alert">{{error}}</p>{% endif %}
+  {% if enabled and not secret %}
+    <p class="notice">Your authenticator is enrolled.</p>
+    <p class="muted">Keep your recovery codes somewhere safe. Your setup key is no longer displayed.</p>
+    <p>Each change requires your current password and a fresh authenticator code or unused recovery code. A code already used to sign in cannot be reused; wait for the next code.</p>
+    {% for action,label in [('replace','Replace authenticator'),('regenerate','Generate new recovery codes'),('disable','Disable optional MFA')] %}
+    {% if action!='disable' or not required %}
+    <details><summary>{{label}}</summary>
+      <form method="post" action="{{url_for('account_mfa_manage')}}" class="loginform">
+        <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+        <input type="hidden" name="action" value="{{action}}">
+        <label>Current password<input type="password" name="current_password" autocomplete="current-password" maxlength="256" required></label>
+        <label>Verification method<select name="method"><option value="totp">Authenticator code</option><option value="recovery">Recovery code</option></select></label>
+        <label>Fresh verification code<input name="code" autocomplete="one-time-code" maxlength="24" required></label>
+        <p class="tiny">{% if action=='replace' %}Your current authenticator works until the replacement is confirmed. Confirmation revokes other sessions and replaces recovery codes.{% elif action=='regenerate' %}Your old recovery codes and other sessions will be revoked. Save the new codes when shown.{% else %}Your authenticator, recovery codes and other sessions will be revoked. Future sign-in uses your password only.{% endif %}</p>
+        <button type="submit">{{label}}</button>
+      </form>
+    </details>
+    {% endif %}
+    {% endfor %}
+    {% if required %}<p class="muted">MFA is required for your account and cannot be disabled.</p>{% endif %}
+  {% elif secret %}
+    {% if enabled %}<p class="notice">Your current authenticator stays active until you confirm this replacement. Canceling keeps your current setup.</p>{% endif %}
+    <h2>Scan with your authenticator</h2>
+    <p>On your phone, open your authenticator, choose <strong>Add account → Scan QR code</strong>, and scan this image.</p>
+    <img class="mfa-qr" src="{{url_for('account_mfa_qr')}}" alt="Authenticator enrollment QR code" width="240" height="240">
+    <details><summary>Cannot scan? Enter a setup key</summary>
+      <p>Choose manual entry, use the account name <strong>{{enrollment_user.username}}</strong>, select <strong>Time based</strong>, and enter:</p>
+      <code class="mfa-key">{{secret}}</code>
+    </details>
+    <p class="tiny">Keep the QR code and setup key private. Setup expires after 10 minutes.</p>
+    <form method="post" class="loginform">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <input type="hidden" name="action" value="confirm">
+      <label>Six-digit code<input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required autofocus></label>
+      <button class="primary full">Confirm authenticator</button>
+    </form>
+    <form method="post" class="loginform">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <input type="hidden" name="action" value="cancel">
+      <button type="submit">Cancel setup</button>
+    </form>
+  {% else %}
+    <p>Use an authenticator on your phone to generate sign-in codes. Verify your password to begin setup.</p>
+    <form method="post" class="loginform">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <input type="hidden" name="action" value="start">
+      <label>Current password<input type="password" name="current_password" autocomplete="current-password" maxlength="256" required autofocus></label>
+      <button class="primary full">Set up authenticator</button>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

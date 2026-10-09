@@ -178,6 +178,19 @@ For deployment, use HTTPS, a production WSGI server, regular backups, and monito
 
 Before activating this upgrade, back up the database, verify hosting/proxy configuration in staging, and expect everyone to sign in again once. Security tables are additive; do not roll back to cookie-only authentication that could accept revoked cookies. These application controls do not provide network-level DDoS protection.
 
+## MFA staged local implementation
+
+MFA storage, QR enrollment and login verification are implemented behind the
+development-only `MFA_ENABLED` flag, which is off by default. With it enabled,
+admins must enroll and verify MFA; staff retain password-only login unless enrolled
+or required by policy. Admin user settings include separate MFA requirement controls;
+account security includes protected authenticator replacement, new recovery codes
+and optional MFA removal. Admin-assisted resets revoke access and require enrollment
+before directory access, preserving the account's normal MFA policy.
+Existing accounts and the working database have not
+been migrated or enrolled automatically. See [MFA setup and testing](MFA_SETUP.md)
+before any activation; production hosting setup and deployment require approval.
+
 ## Technical reference
 
 Built with Flask, Jinja templates, and SQLite.

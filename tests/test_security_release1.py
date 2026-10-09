@@ -27,7 +27,8 @@ for name in ("app.py","utils","templates","static"):
     else: shutil.copy2(source,TMP/name)
 # Explicit synthetic configuration; never inherit deployment credentials.
 os.environ.update(SECRET_KEY="synthetic-security-test-key",ADMIN_PASSWORD="Synthetic-Admin-Password!",
-                  DEPLOY_SECRET="",COOKIE_SECURE="0",APP_ENV="development",CLIENT_IP_HEADER="",TRUSTED_PROXY_CIDRS="")
+                  DEPLOY_SECRET="",COOKIE_SECURE="0",APP_ENV="development",CLIENT_IP_HEADER="",TRUSTED_PROXY_CIDRS="",
+                  MFA_ENABLED="0",MFA_ENROLLMENT_ENABLED="0",MFA_ENCRYPTION_KEY="",MFA_ENCRYPTION_KEY_FILE="")
 os.chdir(TMP)
 sys.path.insert(0,str(TMP))
 A=importlib.import_module("app")

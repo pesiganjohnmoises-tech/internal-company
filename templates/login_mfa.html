@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Verify sign-in · Internal Company Directory{% endblock %}
+{% block content %}
+<section class="login-shell account-shell">
+  <div class="eyebrow">VERIFY SIGN-IN</div>
+  <h1 class="account-title">Authenticator code</h1>
+  <p class="muted">Enter the current six-digit code from your authenticator. This sign-in expires after five minutes.</p>
+  {% if error %}<p class="notice error" role="alert">{{error}}</p>{% endif %}
+  <form method="post" class="loginform">
+    <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+    <input type="hidden" name="method" value="totp">
+    <label>Six-digit code<input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required autofocus></label>
+    <button class="primary full">Verify and sign in</button>
+  </form>
+  <details><summary>Use a recovery code instead</summary>
+    <p>Enter one of the recovery codes saved during setup. Each code can be used once.</p>
+    <form method="post" class="loginform">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <input type="hidden" name="method" value="recovery">
+      <label>Recovery code<input name="code" type="text" autocomplete="off" spellcheck="false" maxlength="24" pattern="(?:[A-Fa-f0-9]{4}-){4}[A-Fa-f0-9]{4}" required placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"></label>
+      <button class="primary full">Use recovery code</button>
+    </form>
+  </details>
+  <form method="post" class="loginform">
+    <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+    <input type="hidden" name="method" value="cancel">
+    <button type="submit">Cancel sign-in</button>
+  </form>
+</section>
+{% endblock %}

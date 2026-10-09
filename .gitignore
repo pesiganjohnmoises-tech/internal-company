@@ -2,6 +2,10 @@
 *.db
 *.db.bak-*
 .secret_key
+.mfa_key
+.mfa_key.*
+.mfa-local-enabled
+.local-mysql/
 *.log
 imports/
 

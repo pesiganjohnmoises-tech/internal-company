@@ -35,6 +35,7 @@
           <span>@{{user.username}} · {{role_label}}</span>
         </div>
         {% if user.role=='ADMIN' %}<a class="account-link" href="{{url_for('account_password')}}">{{icon('shield',16)}}Change password</a>{% endif %}
+        {% if config.MFA_ENROLLMENT_ENABLED %}<a class="account-link" href="{{url_for('account_mfa')}}">{{icon('shield',16)}}Account security</a>{% endif %}
         <form method="post" action="{{url_for('logout')}}" data-signout>
           <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
           <button class="account-signout" type="submit">{{icon('logout',16)}}Sign out</button>

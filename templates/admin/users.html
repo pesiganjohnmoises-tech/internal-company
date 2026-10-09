@@ -21,7 +21,7 @@
   {% if q %}<p class="muted table-summary">{{users|length}} of {{total_users}} users match “{{q}}”.</p>{% endif %}
   <div class="table-wrap">
     <table class="data-table stack-table">
-      <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Can see</th><th>Last sign-in</th><th>Created</th><th><span class="sr-only">Action</span></th></tr></thead>
+      <thead><tr><th>User</th><th>Role</th><th>Status</th>{% if config.MFA_ENABLED %}<th>MFA</th>{% endif %}<th>Can see</th><th>Last sign-in</th><th>Created</th><th><span class="sr-only">Action</span></th></tr></thead>
       <tbody>
         {% set role_names={'USER':'User','FULL_ACCESS':'Full Access','ADMIN':'Admin'} %}
         {% for u in users %}
@@ -34,13 +34,14 @@
           </td>
           <td data-label="Role"><span class="badge role-badge role-{{u.role|lower}}">{{role_names.get(u.role,u.role)}}</span></td>
           <td data-label="Status"><span class="status {{'disabled' if u.status=='DISABLED' else ''}}">{{u.status}}</span></td>
+          {% if config.MFA_ENABLED %}<td data-label="MFA">{{'Required' if u.mfa_required else 'Optional'}}<small class="table-sub">{{'Enrolled' if u.mfa_enabled else ('Enrollment pending' if u.mfa_required else 'Not enrolled')}}</small></td>{% endif %}
           <td data-label="Can see">{% if u.role!='USER' %}All {{total_companies}} companies{% elif u.visible %}{{u.visible}} of {{total_companies}} companies{% else %}<span class="warn-text">No records</span>{% endif %}</td>
           <td data-label="Last sign-in" class="nowrap">{{u.last_login_at|when if u.last_login_at else 'Never'}}</td>
           <td data-label="Created" class="nowrap">{{u.created_at|when}}</td>
           <td><a class="table-link" href="{{url_for('user_edit',uid=u.id)}}">Edit access →</a></td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="table-empty">{{'No users match this filter.' if q else 'No user accounts yet.'}}</td></tr>
+        <tr><td colspan="{{8 if config.MFA_ENABLED else 7}}" class="table-empty">{{'No users match this filter.' if q else 'No user accounts yet.'}}</td></tr>
         {% endfor %}
       </tbody>
     </table>

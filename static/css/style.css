@@ -589,6 +589,9 @@ tr.row-flag td{background:var(--warn-bg)}
   .stack-table td[data-label]::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:600;text-align:left}
   .stack-table tbody tr:hover td{background:none}
 }
+.mfa-qr{display:block;width:240px;max-width:100%;height:auto;margin:20px auto;background:#fff}
+.mfa-key{display:block;overflow-wrap:anywhere;margin:12px 0;user-select:all}
+.mfa-recovery{padding-left:24px;line-height:2;overflow-wrap:anywhere}
 @media(prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}

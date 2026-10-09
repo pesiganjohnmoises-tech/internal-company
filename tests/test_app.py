@@ -3,7 +3,7 @@
 Run from the project folder:  python tests/test_app.py
 The project (including directory.db) is copied to a temporary folder first; real data is never touched.
 """
-import os, sys, shutil, sqlite3, tempfile, importlib
+import os, sys, shutil, sqlite3, tempfile, importlib, ipaddress
 from pathlib import Path
 
 SRC=Path(__file__).resolve().parent.parent
@@ -15,8 +15,12 @@ for name in ("app.py","utils","templates","static","data","directory.db"):
 sys.path.insert(0,str(TMP)); os.chdir(TMP)
 from werkzeug.security import generate_password_hash
 from openpyxl import load_workbook
+os.environ.update(APP_ENV="development",CLIENT_IP_HEADER="",TRUSTED_PROXY_CIDRS="",ADMIN_PASSWORD="Synthetic-Bootstrap-Password!")
 A=importlib.import_module("app")
-A.app.config.update(WTF_CSRF_ENABLED=False,TESTING=True)
+A.app.config.update(WTF_CSRF_ENABLED=False,TESTING=True,SECURITY_RATE_LIMITS={"login":10000,"directory":10000,"export":10000,"import":10000})
+
+def clear_auth_events():
+    with A.db() as c: c.execute("DELETE FROM security_events")
 
 results=[]
 def check(name,cond):
@@ -150,7 +154,7 @@ t=A.app.test_client(); t.environ_base["REMOTE_ADDR"]="10.0.0.9"
 for _ in range(5): t.post("/login",data={"username":"ann","password":"wrong"})
 check("6th attempt throttled even with correct password",t.post("/login",data={"username":"ann","password":PW}).status_code==429)
 check("other IPs unaffected",client("ann",ip="10.0.0.10").get("/search").status_code==200)
-A.FAILED_LOGINS.clear()
+clear_auth_events()
 
 # --- Default password warning -------------------------------------------------------------------------
 check("dashboard warns about default passwords",b"Change default passwords" in adm.get("/admin").data)
@@ -251,7 +255,7 @@ check("imports: failed imports counted",ih["failed"]==q("SELECT COUNT(*) FROM im
 h=adm.get("/admin").data.decode()
 check("imports panel renders; FAILED shown with error style","Import health" in h and 'class="status disabled">FAILED' in h and (not india_uploaded or "data/india.xlsx is older" in h))
 for _ in range(2): A.app.test_client().post("/login",data={"username":"My-Secret-Pass-Typed-As-Name","password":"x"})
-A.app.test_client().post("/login",data={"username":"kharla","password":"wrong"}); A.FAILED_LOGINS.clear()
+A.app.test_client().post("/login",data={"username":"kharla","password":"wrong"}); clear_auth_events()
 for h in A.logging.getLogger().handlers: h.flush()
 act=A.dashboard.activity(con,TMP/"app.log")
 check("activity: admin actions read from app.log, newest first",act["actions"] and act["actions"][0]["text"].startswith("Admin ") and act["actions"][0]["when"]>=act["actions"][-1]["when"])
@@ -300,7 +304,7 @@ check("failing panel shows error box, page still loads",h.status_code==200 and b
 # 1 Log injection: line breaks in typed input stay inside one log line
 for brk in ("\n","\r"," ","\x85"):
     A.app.test_client().post("/login",data={"username":f"x{brk}2026-09-24 12:00:00,000 INFO Admin admin deleted user forged","password":"x"})
-A.FAILED_LOGINS.clear()
+clear_auth_events()
 for h in A.logging.getLogger().handlers: h.flush()
 check("fix 1: login form cannot forge admin actions in Recent activity",not any("forged" in a["text"] for a in A.dashboard.activity(con,TMP/"app.log")["actions"]))
 logtext=(TMP/"app.log").read_text(encoding="utf-8",errors="ignore")
@@ -331,20 +335,21 @@ import time as _t
 def timed(u):
     c=A.app.test_client(); c.environ_base["REMOTE_ADDR"]=f"10.7.{len(u)}.{sum(map(ord,u))%250}"
     s=_t.perf_counter(); c.post("/login",data={"username":u,"password":"wrong"}); return _t.perf_counter()-s
-real=sorted(timed("ann") for _ in range(3))[1]; fake=sorted(timed(f"ghost{i}") for i in range(3))[1]; A.FAILED_LOGINS.clear()
+real=sorted(timed("ann") for _ in range(3))[1]; fake=sorted(timed(f"ghost{i}") for i in range(3))[1]; clear_auth_events()
 check(f"fix 5: unknown username not measurably faster ({fake*1000:.0f} vs {real*1000:.0f} ms)",fake>real/3)
 # 6 One IP guessing many usernames is throttled
 spray=A.app.test_client(); spray.environ_base["REMOTE_ADDR"]="10.66.0.1"
 codes=[spray.post("/login",data={"username":f"guess{i}","password":"x"}).status_code for i in range(31)]
 check("fix 6: 31st attempt from one IP across usernames is throttled",codes[:30].count(429)==0 and codes[30]==429)
 check("fix 6: other IPs still sign in",client("ann",ip="10.66.0.2").get("/search").status_code==200)
-A.FAILED_LOGINS.clear()
+clear_auth_events()
 A.CLIENT_IP_HEADER="X-Real-IP"
+A.TRUSTED_PROXIES=(ipaddress.ip_network("10.0.0.254/32"),)
 px=A.app.test_client(); px.environ_base["REMOTE_ADDR"]="10.0.0.254"
 for i in range(5): px.post("/login",data={"username":"ann","password":"x"},headers={"X-Real-IP":"203.0.113.9"})
 blocked=px.post("/login",data={"username":"ann","password":PW},headers={"X-Real-IP":"203.0.113.9"}).status_code
 other=px.post("/login",data={"username":"ann","password":PW},headers={"X-Real-IP":"203.0.113.10"}).status_code
-A.CLIENT_IP_HEADER=""; A.FAILED_LOGINS.clear()
+A.CLIENT_IP_HEADER=""; A.TRUSTED_PROXIES=(); clear_auth_events()
 check("fix 6: behind a proxy, CLIENT_IP_HEADER throttles per real visitor",blocked==429 and other==302)
 # 7 Security headers
 r=adm.get("/admin")
@@ -496,24 +501,20 @@ A.backup_db=real_backup
 check("backup failure cancels the import",q("SELECT COUNT(*) FROM imports")==before and "backup could not be written" in r)
 check("imports page lists backups","Automatic backups" in boss.get("/admin/imports").data.decode() and backups()[-1].name in boss.get("/admin/imports").data.decode())
 
-# 4 Users change their own password
+# 4 Only admins change passwords
 me=client("v8user")
-check("account menu links to change password",'href="/account/password"' in me.get("/search").data.decode())
+check("user account menu hides change password",'href="/account/password"' not in me.get("/search").data.decode())
 other=client("v8user")
-def change(c,cur,new,confirm=None): return c.post("/account/password",data={"current_password":cur,"new_password":new,"confirm_password":new if confirm is None else confirm},follow_redirects=True).data.decode()
-check("password: wrong current password refused","current password is incorrect" in change(me,"wrong-password-x",PW+"x"))
-check("password: short new password refused","at least 12 characters" in change(me,PW,"short"))
-check("password: mismatched confirmation refused","do not match" in change(me,PW,"Brand-New-Pass-2026!","Something-Else-2026!"))
-upd=q("SELECT updated_at FROM users WHERE id=?",v8["v8user"])
-check("password: change succeeds","Password changed" in change(me,PW,"Brand-New-Pass-2026!"))
-check("password: this session stays signed in, others are signed out",me.get("/search").status_code==200 and other.get("/search").status_code==302)
+before=q("SELECT password_hash FROM users WHERE id=?",v8["v8user"])
+check("user cannot open password page",me.get("/account/password").status_code==403)
+check("user cannot submit password change",me.post("/account/password",data={"current_password":PW,"new_password":"Brand-New-Pass-2026!","confirm_password":"Brand-New-Pass-2026!"}).status_code==403)
+check("denied password change preserves hash",q("SELECT password_hash FROM users WHERE id=?",v8["v8user"])==before)
+check("admin account menu keeps change password",'href="/account/password"' in boss.get("/search").data.decode())
+r=boss.post(f"/admin/users/{v8['v8user']}",data={"role":"USER","status":"ACTIVE","all_companies":[str(sg_cid)],"password":"Brand-New-Pass-2026!"},follow_redirects=True)
+check("admin password reset succeeds",r.status_code==200 and q("SELECT password_hash FROM users WHERE id=?",v8["v8user"])!=before)
+check("admin reset ends existing user sessions",me.get("/search").status_code==302 and other.get("/search").status_code==302)
 check("password: new password signs in, old one does not",client("v8user","Brand-New-Pass-2026!").get("/search").status_code==200 and client("v8user").get("/search").status_code==302)
-check("password: updated_at untouched (admin-edit marker)",q("SELECT updated_at FROM users WHERE id=?",v8["v8user"])==upd)
-A.FAILED_LOGINS.clear()
-t=client("v8user","Brand-New-Pass-2026!",ip="10.8.0.1")
-for _ in range(5): change(t,"wrong-password-x","Another-New-Pass-2026!")
-check("password: repeated wrong current passwords are throttled",t.post("/account/password",data={"current_password":"Brand-New-Pass-2026!","new_password":"Another-New-Pass-2026!","confirm_password":"Another-New-Pass-2026!"}).status_code==429)
-A.FAILED_LOGINS.clear()
+clear_auth_events()
 
 # 5 Search: country filter and the fields users can see
 india_ids=[str(r[0]) for r in con.execute("SELECT co.id FROM companies co JOIN countries cn ON cn.id=co.country_id WHERE cn.name='India' ORDER BY co.id")]

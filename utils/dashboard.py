@@ -190,7 +190,7 @@ def export_rows(con,kind):
         rows=con.execute("""SELECT ct.id,co.id,co.company_name,cn.name,ct.name,ct.job_position,ct.contact_type,ct.email,ct.phone,ct.landline_no,ct.address
             FROM contacts ct JOIN companies co ON co.id=ct.company_id JOIN countries cn ON cn.id=co.country_id
             ORDER BY cn.name,co.company_name COLLATE NOCASE,ct.id""").fetchall()
-        return header,[[csv_cell(v) for v in r] for r in rows]
+        return [csv_cell(h) for h in header],[[csv_cell(v) for v in r] for r in rows]
     companies=con.execute("""SELECT co.id,cn.name country,co.company_name,co.city,co.state,co.network,co.address,co.source_data,
         (SELECT COUNT(*) FROM contacts ct WHERE ct.company_id=co.id) contacts
         FROM companies co JOIN countries cn ON cn.id=co.country_id ORDER BY cn.name,co.company_name COLLATE NOCASE""").fetchall()
@@ -203,4 +203,4 @@ def export_rows(con,kind):
     for r in companies:
         src=load(r["source_data"])
         rows.append([csv_cell(v) for v in [r["id"],r["country"],r["company_name"],r["city"],r["state"],r["network"],r["address"],r["contacts"]]+[src.get(h) for h in extra]])
-    return header,rows
+    return [csv_cell(h) for h in header],rows

@@ -122,6 +122,41 @@
   </div>
 </form>
 
+{% if config.MFA_ENABLED and target %}
+<section class="admin-panel settings-card" aria-labelledby="card-mfa">
+  <header class="card-head"><div><h2 id="card-mfa">Sign-in security</h2>
+    <p class="muted">{{'MFA is required' if mfa_policy.required else 'MFA is optional'}}. {{'An authenticator is enrolled.' if mfa_policy.enabled else ('Enrollment is pending.' if mfa_policy.required else 'No authenticator is enrolled.')}}</p>
+  </div></header>
+  {% if mfa_policy.recovery_required %}<p class="notice">Recovery is pending. This user must enroll again before directory access, even if the MFA policy is optional.</p>{% endif %}
+  {% if target.role=='ADMIN' %}
+    <p>MFA is mandatory for administrators and cannot be made optional.</p>
+  {% else %}
+    <form method="post" action="{{url_for('user_mfa_policy',uid=target.id)}}" class="loginform">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <label>MFA requirement<select name="required"><option value="0" {% if not mfa_policy.required %}selected{% endif %}>Optional</option><option value="1" {% if mfa_policy.required %}selected{% endif %}>Required</option></select></label>
+      <p class="muted">Changing this requirement signs the user out on every device. Users with required MFA must complete enrollment before accessing the directory.</p>
+      <p class="tiny">Making MFA optional preserves any enrolled authenticator and recovery codes. Enrolled accounts still verify a code at sign-in.</p>
+      <button class="primary" type="submit">Save MFA requirement</button>
+    </form>
+  {% endif %}
+  {% if target.id!=user.id %}
+  <details><summary>Recover a lost authenticator</summary>
+    <p>First verify the account owner's identity through your approved company procedure. This confirmation records your acknowledgement; it does not perform identity verification.</p>
+    <form method="post" action="{{url_for('user_mfa_reset',uid=target.id)}}" class="loginform">
+      <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+      <label><input type="checkbox" name="identity_verified" value="1" required> I verified the account owner's identity.</label>
+      <label>Type user ID {{target.id}} to confirm<input name="confirm_user_id" inputmode="numeric" required></label>
+      <label>Your current password<input type="password" name="current_password" autocomplete="current-password" maxlength="256" required></label>
+      <label>Your verification method<select name="method"><option value="totp">Authenticator code</option><option value="recovery">Recovery code</option></select></label>
+      <label>Your fresh verification code<input name="code" autocomplete="one-time-code" maxlength="24" required></label>
+      <p class="tiny">Revokes this user's authenticator, recovery codes, pending logins and all sessions. Preserves their password, roles, grants and MFA policy. Re-enrollment is mandatory before access.</p>
+      <button class="danger" type="submit">Reset authenticator and require enrollment</button>
+    </form>
+  </details>
+  {% else %}<p class="muted">Use Account security to replace your own authenticator. You cannot reset your own admin MFA here.</p>{% endif %}
+</section>
+{% endif %}
+
 {% if target %}
 <section class="admin-panel danger-zone" aria-labelledby="card-danger">
   <div>

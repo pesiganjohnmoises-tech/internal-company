@@ -133,7 +133,7 @@ class ManagementTests(unittest.TestCase):
         self.assertEqual(after["recovery_required"],1); self.assertIsNone(after["encrypted_secret"])
         self.assertEqual(self.client.get("/search").location,"/login")
         with A.db() as con: self.assertEqual(tuple(con.execute("SELECT * FROM users WHERE id=?",(self.uid,)).fetchone()),identity)
-        admin.post(f"/admin/users/{self.uid}/mfa-policy",data={"required":"0","csrf_token":csrf(admin,f"/admin/users/{self.uid}")})
+        admin.post(f"/admin/users/{self.uid}/mfa-policy",data={"required":"0","current_password":self.password,"method":"recovery","code":codes[1],"csrf_token":csrf(admin,f"/admin/users/{self.uid}")})
         pending=self.login(); self.assertEqual(pending.get("/search").location,"/login/mfa")
         secret=re.search(r'<code class="mfa-key">([A-Z2-7]{32})</code>',pending.get("/account/mfa").get_data(as_text=True)).group(1)
         result=pending.post("/account/mfa",data={"action":"confirm","code":state["pyotp"].TOTP(secret).now(),"csrf_token":csrf(pending)})

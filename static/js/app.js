@@ -237,3 +237,52 @@ document.addEventListener('click', event => {
     try { localStorage.removeItem(key); } catch (e) { /* storage unavailable */ }
   }));
 })();
+
+// Admin account actions: progressive disclosure only; the server still verifies every sensitive save.
+document.addEventListener('DOMContentLoaded', () => {
+  const setVerification = (form, active) => {
+    const panel = form.querySelector('[data-admin-verification]');
+    panel.hidden = !active;
+    panel.disabled = !active;
+    panel.querySelectorAll('[data-verification-required]').forEach(input => {
+      input.required = active;
+      if (!active) input.value = '';
+    });
+    if (!active) {
+      const method = panel.querySelector('[name="method"]');
+      if (method) method.value = 'totp';
+    }
+  };
+  document.querySelectorAll('form[data-verification="account"], form[data-verification="policy"]').forEach(form => {
+    const update = () => {
+      const policy = form.dataset.verification === 'policy';
+      const active = policy
+        ? form.elements.required.value !== form.dataset.initialRequired
+        : form.elements.password.value !== '' || form.elements.role.value !== form.dataset.initialRole || form.elements.status.value !== form.dataset.initialStatus;
+      setVerification(form, active);
+      if (policy) form.querySelector('button[type="submit"]').disabled = !active;
+    };
+    form.addEventListener('input', update);
+    form.addEventListener('change', update);
+    form.addEventListener('submit', update);
+    form.addEventListener('reset', () => setTimeout(update, 0));
+    window.addEventListener('pageshow', update);
+    update();
+  });
+  const deleteForm = document.querySelector('form[data-verification="delete"]');
+  if (deleteForm) {
+    const open = document.querySelector('[data-delete-open]');
+    const cancel = deleteForm.querySelector('[data-delete-cancel]');
+    const show = active => {
+      deleteForm.hidden = !active;
+      setVerification(deleteForm, active);
+      open.hidden = active;
+      open.setAttribute('aria-expanded', String(active));
+      if (active) deleteForm.querySelector('[name="current_password"]').focus();
+    };
+    cancel.hidden = false;
+    open.addEventListener('click', () => show(true));
+    cancel.addEventListener('click', () => { show(false); open.focus(); });
+    show(false);
+  }
+});

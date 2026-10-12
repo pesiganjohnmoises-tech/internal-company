@@ -275,8 +275,8 @@ except mfa.MFAChallengeError:
         other=A.app.test_client()
         other.post("/login",data={"username":"pendingtarget","password":self.password,"csrf_token":csrf(other,"/login")})
         saved=self.pending_token(other)
-        for status in ("DISABLED","ACTIVE"):
-            result=admin.post(f"/admin/users/{target}",data={"role":"USER","status":status,"csrf_token":csrf(admin,f"/admin/users/{target}")})
+        for index,status in enumerate(("DISABLED","ACTIVE"),1):
+            result=admin.post(f"/admin/users/{target}",data={"role":"USER","status":status,"current_password":self.password,"method":"recovery","code":self.codes[index],"csrf_token":csrf(admin,f"/admin/users/{target}")})
             self.assertEqual(result.status_code,302)
         with other.session_transaction() as session: session["mfa_pending"]=saved
         self.assertEqual(other.get("/account/mfa").location,"/login")

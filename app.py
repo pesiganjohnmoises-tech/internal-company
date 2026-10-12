@@ -9,7 +9,7 @@ from markupsafe import Markup, escape
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_wtf.csrf import CSRFProtect
-from utils.importer import import_workbook, column_map, detect_country, backfill_source_data, agent_id_from_source, utcnow
+from utils.importer import import_workbook, column_map, detect_country, backfill_source_data, agent_id_from_source, utcnow, ReplacementValidationError
 from utils.fields import build_company_detail, nearest_expiry
 from utils import dashboard, profile_import, security
 from utils.status import agent_status, country_code, search_status
@@ -122,6 +122,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone);
+        CREATE INDEX IF NOT EXISTS idx_contacts_company ON contacts(company_id);
         """)
         c.executescript(security.SCHEMA)
         for table, column, declaration in [
@@ -376,10 +377,10 @@ SALES_FIELDS={"x_kgsales":"Kargosmart Sales","x_pcsales":"Panda Cargo Sales","x_
 # Alias has no column of its own: it is read from the stored XLSX row ("Alias" header, as every import writes it).
 # json_valid guards against a malformed row stopping the whole query.
 ALIAS_SQL="(CASE WHEN json_valid(co.source_data) THEN json_extract(co.source_data,'$.Alias') END)"
-SEARCH_FIELDS=["company_name","network","city","state","country","contact_type","name","job_position","email","phone","landline_no","address"]
+SEARCH_FIELDS=["company_name","contact_type","name","job_position","email","phone","landline_no"]
 def visible_fields(user):
     """Every core column, plus the sales columns granted to a User (all of them for Admin/Full Access).
-    Search and the company page use the same list, so a user can search anything they can see."""
+    Search uses this list to prevent matching hidden fields; some visible fields are excluded from free-text search."""
     if user["role"] in ("ADMIN","FULL_ACCESS"): return list(FIELD_COLUMNS)
     with db() as c: granted={r["field_name"] for r in c.execute("SELECT field_name FROM user_field_access WHERE user_id=?",(user["id"],))}
     return list(FIELD_COLUMNS)+[f for f in SALES_FIELDS if f in granted]
@@ -438,33 +439,33 @@ PAGE_SIZE=20; MAX_QUERY=200; MAX_TERMS=8
 def account_password():
     u=current_user()
     if request.method=="POST":
-        # Admin current-password checks share the persistent login failure limits.
         current=request.form.get("current_password",""); new=request.form.get("new_password","")
         if len(current)>PASSWORD_MAX or len(new)>PASSWORD_MAX or len(request.form.get("confirm_password",""))>PASSWORD_MAX: abort(400)
-        try: attempt,retry=auth_reservation(u["username"])
-        except sqlite3.OperationalError:
-            return render_template("error.html",message="Password changes are temporarily unavailable. Please try again shortly."),503,{"Retry-After":"5"}
-        if retry: return rate_limited(retry)
-        with db() as c: row=c.execute("SELECT id,password_hash FROM users WHERE id=?",(u["id"],)).fetchone()
-        if not check_password_hash(row["password_hash"],current):
-            logging.warning("Failed password change user=%s ip=%s",u["username"],client_ip())
-            flash("Your current password is incorrect.","error")
-        else:
-            security.release(DB,attempt,u["username"])
+        original_session=dict(session)
+        try:
+            destination=url_for("account_password"); inputs=prepare_admin_verification(destination)
             if len(new)<12: flash("The new password must be at least 12 characters.","error"); return render_template("account_password.html")
             if new!=request.form.get("confirm_password",""): flash("The new passwords do not match.","error"); return render_template("account_password.html")
             if new==current: flash("Choose a password different from your current one.","error"); return render_template("account_password.html")
-            # updated_at is left alone: it marks admin edits (see the kharla rule in init_db).
-            with db() as c:
-                c.execute("UPDATE users SET password_hash=? WHERE id=?",(generate_password_hash(new),u["id"]))
+            password_hash=generate_password_hash(new)
+            with closing(db()) as c,c:
+                c.execute("BEGIN IMMEDIATE")
+                verify_admin_change(c,inputs,destination)
+                c.execute("UPDATE users SET password_hash=? WHERE id=?",(password_hash,u["id"]))
                 c.execute("DELETE FROM security_sessions WHERE user_id=?",(u["id"],))
                 revoke_user_mfa(c,u["id"])
                 security.clear_auth(c,u["username"])
                 start_session(c.execute("SELECT id,password_hash FROM users WHERE id=?",(u["id"],)).fetchone(),c,mfa_verified=session.get("mfa_verified",False))
             logging.info("User %s changed own password",u["username"])
             flash("Password changed. Any other devices signed in to your account have been signed out.","success")
-            return redirect(url_for("account_password"))
+            return redirect(destination)
+        except AdminVerificationRequired as e: return e.response
+        except sqlite3.Error:
+            session.clear(); session.update(original_session); g.current_user=u
+            logging.error("Admin password change unavailable actor_id=%s",u["id"])
+            return render_template("error.html",message="Password changes are temporarily unavailable. No changes were saved."),503,{"Retry-After":"5"}
     return render_template("account_password.html")
+
 def mfa_available():
     if not app.config["MFA_ENABLED"] or not app.config["MFA_ENROLLMENT_ENABLED"]: abort(404)
 
@@ -640,8 +641,16 @@ def search():
     # Agent ID and Alias are shown to everyone who can open the company, so they are always searchable.
     cols=["co.agent_id",ALIAS_SQL]+[FIELD_COLUMNS[f] for f in SEARCH_FIELDS if f in fields]
     rows=[]; previews={}; total=0; pages=1
+    short_query=bool(q) and sum(not ch.isspace() for ch in q)<5
+    lookup_required=user["role"]=="USER" and not q and bool(country)
+    too_many=False
+    country_only=False
+    if q and not short_query:
+        normalized=" ".join(q.casefold().split())
+        with db() as c: country_only=any(normalized==" ".join(r["name"].casefold().split()) for r in c.execute("SELECT name FROM countries"))
+    if country_only or short_query or lookup_required: page=1
     # A country on its own lists all of that country's companies the user may see.
-    if q or country:
+    if (q or country) and not (country_only or short_query or lookup_required):
         where=clause
         if country: where+=" AND cn.name=? COLLATE NOCASE"; params.append(country)
         for term in terms:
@@ -653,11 +662,19 @@ def search():
             (SELECT COUNT(*) FROM contacts c2 WHERE c2.company_id=co.id) contacts
             FROM companies co JOIN countries cn ON cn.id=co.country_id LEFT JOIN contacts ct ON ct.company_id=co.id WHERE {where} GROUP BY co.id"""
         with db() as c:
+            if user["role"]=="USER":
+                exact_clause,exact_params=access_sql(user)
+                if country: exact_clause+=" AND cn.name=? COLLATE NOCASE"; exact_params.append(country)
+                exact_ids=c.execute("SELECT co.id FROM companies co JOIN countries cn ON cn.id=co.country_id WHERE "+exact_clause+" AND co.agent_id=? COLLATE NOCASE LIMIT 2",exact_params+[q]).fetchall()
+                # Only an unambiguous, permitted exact ID takes precedence over partial matches.
+                if len(exact_ids)==1:
+                    sql=sql.replace(" GROUP BY co.id"," AND co.id=? GROUP BY co.id"); params.append(exact_ids[0]["id"])
             total=c.execute("SELECT COUNT(*) FROM ("+sql+")",params).fetchone()[0]
+            if user["role"]=="USER" and total>10: too_many=True; total=0
             pages=max(1,-(-total//PAGE_SIZE)); page=min(page,pages)
             # An exact Agent ID match (e.g. SGP001) comes before partial ones (SGP0010, SGP0011...).
             exact=f"co.agent_id COLLATE NOCASE IN ({','.join('?'*len(terms))}) DESC," if terms else ""
-            rows=c.execute(sql+f" ORDER BY {exact}cn.name,co.company_name COLLATE NOCASE LIMIT ? OFFSET ?",params+terms+[PAGE_SIZE,(page-1)*PAGE_SIZE]).fetchall()
+            rows=[] if too_many else c.execute(sql+f" ORDER BY {exact}cn.name,co.company_name COLLATE NOCASE LIMIT ? OFFSET ?",params+terms+[PAGE_SIZE,(page-1)*PAGE_SIZE]).fetchall()
             rows=[{**dict(r),"status":agent_status(r["source_data"]),"code":country_code(r["country"])} for r in rows]
             if rows:
                 company_ids=[r["id"] for r in rows]
@@ -674,7 +691,7 @@ def search():
         with db() as c:
             try: attention=dashboard.attention(c)["total"]
             except Exception: logging.exception("Attention count failed")
-    return render_template("search.html",rows=rows,previews=previews,q=q,country=country,countries=country_options(user),attention=attention,terms_cut=len(q.split())>len(terms),fields=fields,field_labels=FIELD_LABELS,
+    return render_template("search.html",rows=rows,previews=previews,q=q,country=country,countries=country_options(user),attention=attention,country_only=country_only,short_query=short_query,lookup_required=lookup_required,too_many=too_many,terms_cut=len(q.split())>len(terms),fields=fields,field_labels=FIELD_LABELS,
                            total=total,page=page,pages=pages,page_links=page_links(page,pages),start=start,end=start+len(rows)-1 if rows else 0)
 @app.route("/company/<int:company_id>")
 @login_required
@@ -700,6 +717,12 @@ def notfound(e): return render_template("error.html",message="The requested dire
 def bad_request(e): return render_template("error.html",message="The form could not be processed, possibly because it expired. Go back, reload the page and try again."),400
 @app.errorhandler(413)
 def too_large(e): return render_template("error.html",message="That file is larger than the 16 MB upload limit."),413
+@app.errorhandler(sqlite3.OperationalError)
+def database_operational_error(error):
+    if getattr(error,"sqlite_errorcode",0)&0xff not in (sqlite3.SQLITE_BUSY,sqlite3.SQLITE_LOCKED): raise error
+    # Rendering must not retry the failed session lookup or grant authenticated access.
+    g.current_user=None
+    return render_template("error.html",message="The application is busy. Please try again shortly."),503,{"Retry-After":"5"}
 @app.errorhandler(500)
 def server_error(e): return render_template("error.html",message="Something went wrong on our side. The error has been logged; please try again."),500
 
@@ -754,8 +777,63 @@ def users():
                          "visible":total if r["role"]!="USER" else c.execute(f"SELECT COUNT(*) FROM companies co WHERE {clause}",params).fetchone()[0]})
     shown=[r for r in rows if q.lower() in " ".join((r["username"],r["display_name"],r["role"],r["status"])).lower()] if q else rows
     return render_template("admin/users.html",users=shown,q=q,total_users=len(rows),total_companies=total)
+class AdminVerificationRequired(Exception):
+    def __init__(self,response): self.response=response
+
+def admin_verification_errors(fn):
+    @wraps(fn)
+    def wrap(*args,**kwargs):
+        try: return fn(*args,**kwargs)
+        except AdminVerificationRequired as e: return e.response
+        except sqlite3.Error:
+            logging.error("Admin account change unavailable endpoint=%s",request.endpoint)
+            return render_template("error.html",message="Account changes are temporarily unavailable. No changes were saved."),503,{"Retry-After":"5"}
+    return wrap
+
+def prepare_admin_verification(return_url):
+    actor=current_user()
+    if app.config["MFA_ENABLED"]:
+        try: inputs,response=fresh_mfa_inputs(actor,return_url)
+        except mfa.MFASecretError: raise AdminVerificationRequired(mfa_unavailable()) from None
+        if response is not None: raise AdminVerificationRequired(response)
+        return inputs
+    password=request.form.get("current_password","")
+    if len(password)>PASSWORD_MAX: abort(400)
+    attempt,retry=auth_reservation(actor["username"])
+    if retry: raise AdminVerificationRequired(rate_limited(retry))
+    with closing(db()) as c: row=c.execute("SELECT password_hash FROM users WHERE id=?",(actor["id"],)).fetchone()
+    if not row or not check_password_hash(row["password_hash"],password):
+        logging.warning("Failed admin verification actor_id=%s",actor["id"])
+        flash("Enter your current administrator password. No changes were saved.","error")
+        raise AdminVerificationRequired(redirect(return_url))
+    security.release(DB,attempt,actor["username"])
+    return row["password_hash"],None,None,None
+
+def verify_admin_change(con,inputs,return_url):
+    # Caller holds BEGIN IMMEDIATE; factor consumption and account changes commit together.
+    actor=current_user(); password_hash,code,method,attempt=inputs; stamp=int(time.time())
+    row=con.execute("SELECT role,status,password_hash FROM users WHERE id=?",(actor["id"],)).fetchone()
+    sid=session.get("sid","")
+    active=con.execute("SELECT user_id,started,seen FROM security_sessions WHERE token_hash=?",(security.opaque(sid),)).fetchone()
+    valid=(row and row["role"]=="ADMIN" and row["status"]=="ACTIVE" and row["password_hash"]==password_hash
+           and session.get("pwv")==password_version(password_hash) and active and active["user_id"]==actor["id"]
+           and stamp-active["started"]<=SESSION_MAX and stamp-active["seen"]<=SESSION_IDLE
+           and stamp-session.get("started",0)<=SESSION_MAX and stamp-session.get("seen",0)<=SESSION_IDLE)
+    try:
+        if not valid: raise ValueError
+        if app.config["MFA_ENABLED"]:
+            if session.get("mfa_verified") is not True: raise ValueError
+            try: mfa.verify_management(con,app.extensions["mfa_cipher"],actor["id"],sid,password_hash,code,method,"ADMIN")
+            except mfa.MFASecretError: raise AdminVerificationRequired(mfa_unavailable()) from None
+            con.execute("DELETE FROM security_events WHERE token=?",(attempt,))
+    except ValueError:
+        logging.warning("Admin verification rejected actor_id=%s",actor["id"])
+        flash("Fresh verification failed. Use your password and a fresh code. No changes were saved.","error")
+        raise AdminVerificationRequired(redirect(return_url)) from None
+
 @app.route("/admin/users/create",methods=["GET","POST"])
 @admin_required
+@admin_verification_errors
 def user_create():
     if request.method=="POST":
         username=request.form.get("username","").strip(); password=request.form.get("password",""); names=name_fields(request.form)
@@ -766,7 +844,11 @@ def user_create():
         else:
             try:
                 role=request.form.get("role","USER") if request.form.get("role") in ("USER","ADMIN","FULL_ACCESS") else "USER"
-                with db() as c: c.execute("INSERT INTO users(username,first_name,last_name,password_hash,role,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",(username,*names,generate_password_hash(password),role,"ACTIVE",now(),now()))
+                destination=url_for("user_create"); inputs=prepare_admin_verification(destination)
+                with closing(db()) as c,c:
+                    c.execute("BEGIN IMMEDIATE")
+                    verify_admin_change(c,inputs,destination)
+                    c.execute("INSERT INTO users(username,first_name,last_name,password_hash,role,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",(username,*names,generate_password_hash(password),role,"ACTIVE",now(),now()))
                 logging.info("Admin %s created user %s role=%s",current_user()["username"],username,role)
                 flash("User created. Assign access below.","success"); return redirect(url_for("user_edit",uid=get_user_id(username)))
             except sqlite3.IntegrityError: flash("That username already exists.","error")
@@ -783,8 +865,9 @@ def get_countries():
     with db() as c: return c.execute("SELECT * FROM countries ORDER BY name").fetchall()
 @app.route("/admin/users/<int:uid>",methods=["GET","POST"])
 @admin_required
+@admin_verification_errors
 def user_edit(uid):
-    with db() as c:
+    with closing(db()) as c,c:
         target=c.execute("SELECT id,username,first_name,last_name,role,status FROM users WHERE id=?",(uid,)).fetchone()
         if not target: abort(404)
         state=mfa.account_state(c,target) if app.config["MFA_ENABLED"] else None
@@ -801,6 +884,13 @@ def user_edit(uid):
             admin=current_user()
             if uid==admin["id"] and (role!="ADMIN" or status!="ACTIVE"):
                 flash("You cannot remove admin access from, or disable, your own account. No changes were saved.","error"); return redirect(url_for("user_edit",uid=uid))
+            destination=url_for("user_edit",uid=uid)
+            sensitive=bool(pw or role!=target["role"] or status!=target["status"])
+            inputs=prepare_admin_verification(destination) if sensitive else None
+            c.execute("BEGIN IMMEDIATE")
+            latest=c.execute("SELECT role,status FROM users WHERE id=?",(uid,)).fetchone()
+            if not latest or (latest["role"],latest["status"])!=(target["role"],target["status"]): abort(409)
+            if sensitive: verify_admin_change(c,inputs,destination)
             before=access_summary(c,uid)
             c.execute("UPDATE users SET first_name=?,last_name=?,role=?,status=?,updated_at=? WHERE id=?",(*names,role,status,now(),uid))
             if pw: c.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",(generate_password_hash(pw),now(),uid))
@@ -875,19 +965,29 @@ def user_mfa_reset(uid):
 
 @app.post("/admin/users/<int:uid>/mfa-policy")
 @admin_required
+@admin_verification_errors
 def user_mfa_policy(uid):
     mfa_available()
     values=request.form.getlist("required")
     if len(values)!=1 or values[0] not in ("0","1"): abort(400)
     required=values[0]=="1"; actor=current_user()
+    destination=url_for("user_edit",uid=uid)
     try:
+        with closing(db()) as c:
+            initial=c.execute("SELECT id,role,status FROM users WHERE id=?",(uid,)).fetchone()
+            if not initial: abort(404)
+            if initial["role"]=="ADMIN" and not required: abort(400)
+            initial_required=mfa.account_state(c,initial)["required"]
+        inputs=prepare_admin_verification(destination) if initial_required!=required else None
         with closing(db()) as c,c:
             c.execute("BEGIN IMMEDIATE")
             target=c.execute("SELECT id,role,status FROM users WHERE id=?",(uid,)).fetchone()
             if not target: abort(404)
             if target["role"]=="ADMIN" and not required: abort(400)
             previous=mfa.account_state(c,target)["required"]
+            if target["role"]!=initial["role"] or previous!=initial_required: abort(409)
             if previous!=required:
+                verify_admin_change(c,inputs,destination)
                 c.execute("INSERT OR IGNORE INTO user_mfa(user_id) VALUES(?)",(uid,))
                 c.execute("UPDATE user_mfa SET required=? WHERE user_id=?",(int(required),uid))
                 revoke_user_mfa(c,uid)
@@ -902,10 +1002,14 @@ def user_mfa_policy(uid):
         return render_template("error.html",message="MFA policy changes are temporarily unavailable. Please try again later."),503,{"Retry-After":"5"}
 @app.post("/admin/users/<int:uid>/delete")
 @admin_required
+@admin_verification_errors
 def user_delete(uid):
     if uid==current_user()["id"]: flash("You cannot delete your own account.","error")
     else:
-        with db() as c:
+        destination=url_for("user_edit",uid=uid); inputs=prepare_admin_verification(destination)
+        with closing(db()) as c,c:
+            c.execute("BEGIN IMMEDIATE")
+            verify_admin_change(c,inputs,destination)
             gone=c.execute("SELECT username FROM users WHERE id=?",(uid,)).fetchone()
             c.execute("DELETE FROM users WHERE id=?",(uid,))
         if gone: logging.info("Admin %s deleted user %s (id=%s)",current_user()["username"],gone["username"],uid)
@@ -924,14 +1028,16 @@ def backup_db(label):
     finally: out.close(); src.close()
     for old in sorted(BACKUPS.glob("directory-*.db"))[:-BACKUP_KEEP]: old.unlink(missing_ok=True)
     return dest.name
-def record_import(source,country,status,result=None):
-    with db() as c:
-        if result: c.execute("INSERT INTO imports(source_file,country,status,records_processed,records_imported,duplicates_found,errors_found,imported_at) VALUES(?,?,?,?,?,?,?,?)",
-                             (source,country,status,result["processed"],result["imported"],result["duplicates"],len(result["errors"]),now()))
-        else: c.execute("INSERT INTO imports(source_file,country,status,errors_found,imported_at) VALUES(?,?,?,?,?)",(source,country,status,1,now()))
+def record_import(source,country,status,result=None,con=None):
+    if con is None:
+        with closing(db()) as c,c: return record_import(source,country,status,result,con=c)
+    if result: con.execute("INSERT INTO imports(source_file,country,status,records_processed,records_imported,duplicates_found,errors_found,imported_at) VALUES(?,?,?,?,?,?,?,?)",
+                          (source,country,status,result["processed"],result["imported"],result["duplicates"],len(result["errors"]),now()))
+    else: con.execute("INSERT INTO imports(source_file,country,status,errors_found,imported_at) VALUES(?,?,?,?,?)",(source,country,status,1,now()))
 def import_error_message(error):
     """Expose only known workbook validation messages; correlate unexpected failures with the log."""
     message=str(error)
+    if isinstance(error,ReplacementValidationError): return message
     safe={"Workbook is empty","Missing required column(s): company_name",
           f"The workbook has more than {profile_import.MAX_ROWS} rows",
           "Unknown import mode","The file has errors that block the import."}
@@ -946,11 +1052,11 @@ def run_import(path,source,country):
     except Exception:
         logging.exception("Backup before import failed file=%s",source)
         flash("Import cancelled: the database backup could not be written, so nothing was changed.","error"); return
-    try: result=import_workbook(path,DB,country,replace_country=True)
+    try: result=import_workbook(path,DB,country,replace_country=True,on_success=lambda c,r: record_import(source,country,"COMPLETED",r,con=c))
     except Exception as e:
         logging.exception("Import failed file=%s",source); record_import(source,country,"FAILED")
         flash(f"{source}: import rejected; previous active dataset was kept. {import_error_message(e)}","error"); return
-    record_import(source,country,"COMPLETED",result); ch=result["changes"]
+    ch=result["changes"]
     logging.info("Admin %s imported %s rows=%s added=%s removed=%s backup=%s",current_user()["username"],source,result["imported"],len(ch["added"]),len(ch["removed"]),backup)
     flash(f"{result['country']} replaced from {source}: {result['imported']} contact rows, {len(ch['added'])} companies added, {len(ch['removed'])} removed. Backup saved as {backup}.","success")
     if result["errors"]: flash("Import issues: "+"; ".join(result["errors"][:5]),"error")
@@ -1122,7 +1228,11 @@ def mapped_confirm(profile):
     except Exception:
         logging.exception("Backup before mapped import failed file=%s",source)
         flash("Import cancelled: the database backup could not be written, so nothing was changed.","error"); return back
-    try: done=profile_import.apply(path,DB,p,request.form.get("plan",""),path.name,**opts)
+    def completed(con,done):
+        s=done["summary"]; r=done["result"]
+        con.execute("INSERT INTO imports(source_file,country,status,records_processed,records_imported,duplicates_found,errors_found,imported_at) VALUES(?,?,?,?,?,?,?,?)",
+                    (label,p["country"],"COMPLETED",s["total"],r["new_contacts"]+r["update_contacts"],s["duplicates"],s["errors"],now()))
+    try: done=profile_import.apply(path,DB,p,request.form.get("plan",""),path.name,on_success=completed,**opts)
     except profile_import.StalePlan as e:
         flash(f"{e} Nothing was imported; check the updated preview and confirm again.","error"); return back
     except Exception as e:
@@ -1130,9 +1240,6 @@ def mapped_confirm(profile):
         with db() as c: c.execute("INSERT INTO imports(source_file,country,status,errors_found,imported_at) VALUES(?,?,?,?,?)",(label,p["country"],"FAILED",1,now()))
         flash(f"Import failed and was rolled back; nothing was changed. {import_error_message(e)}","error"); return back
     s=done["summary"]; r=done["result"]
-    with db() as c:
-        c.execute("INSERT INTO imports(source_file,country,status,records_processed,records_imported,duplicates_found,errors_found,imported_at) VALUES(?,?,?,?,?,?,?,?)",
-                  (label,p["country"],"COMPLETED",s["total"],r["new_contacts"]+r["update_contacts"],s["duplicates"],s["errors"],now()))
     logging.info("Admin %s mapped import profile=%s file=%s mode=%s rows=%s valid=%s new_companies=%s new_contacts=%s updated_companies=%s updated_contacts=%s duplicates=%s skipped=%s errors=%s backup=%s",
                  current_user()["username"],p["name"],source,opts["mode"],s["total"],s["valid"],r["new_companies"],r["new_contacts"],r["update_companies"],r["update_contacts"],s["duplicates"],s["skipped"],s["errors"],backup)
     path.unlink(missing_ok=True)

@@ -108,11 +108,11 @@ with A.db() as con: uid=con.execute("SELECT id FROM users WHERE username='kharla
 victim=login("kharla","Synthetic-Reset-Password!")
 old_cookie=victim.get_cookie("session").value
 for status in ("DISABLED","ACTIVE"):
-    two.post(f"/admin/users/{uid}",data={"role":"USER","status":status,"csrf_token":token(two)})
+    two.post(f"/admin/users/{uid}",data={"role":"USER","status":status,"current_password":"Synthetic-Changed-Password!","csrf_token":token(two)})
 replay.set_cookie("session",old_cookie)
 check("disable and re-enable never revives old cookie",replay.get("/search").status_code==302)
 victim=login("kharla","Synthetic-Reset-Password!")
-two.post(f"/admin/users/{uid}",data={"role":"FULL_ACCESS","status":"ACTIVE","csrf_token":token(two)})
+two.post(f"/admin/users/{uid}",data={"role":"FULL_ACCESS","status":"ACTIVE","current_password":"Synthetic-Changed-Password!","csrf_token":token(two)})
 check("role change revokes user sessions",victim.get("/search").status_code==302)
 legacy=A.app.test_client()
 with legacy.session_transaction() as sess:
@@ -126,10 +126,10 @@ for field,age in (("seen",A.SESSION_IDLE+1),("started",A.SESSION_MAX+1)):
 
 # Keep admin self-change validation and throttling after staff self-service removal.
 clear_events()
-for data,expected in (({"current_password":"incorrect","new_password":"New-Synthetic-Password!","confirm_password":"New-Synthetic-Password!"},"incorrect"),
+for data,expected in (({"current_password":"incorrect","new_password":"New-Synthetic-Password!","confirm_password":"New-Synthetic-Password!"},"administrator password"),
                       ({"current_password":"Synthetic-Changed-Password!","new_password":"short","confirm_password":"short"},"at least 12"),
                       ({"current_password":"Synthetic-Changed-Password!","new_password":"New-Synthetic-Password!","confirm_password":"Different-Synthetic-Password!"},"do not match")):
-    response=two.post("/account/password",data={**data,"csrf_token":token(two)})
+    response=two.post("/account/password",data={**data,"csrf_token":token(two)},follow_redirects=True)
     check("admin own-password validation "+expected,response.status_code==200 and expected in response.get_data(as_text=True))
 clear_events()
 for _ in range(5): two.post("/account/password",data={"current_password":"wrong","csrf_token":token(two)})

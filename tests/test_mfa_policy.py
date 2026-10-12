@@ -31,11 +31,15 @@ class PolicyTests(unittest.TestCase):
             secret=re.search(r'<code class="mfa-key">([A-Z2-7]{32})</code>',html).group(1)
             result=client.post("/account/mfa",data={"action":"confirm","code":state["pyotp"].TOTP(secret).now(),"csrf_token":csrf(client)})
             self.assertEqual(result.status_code,200)
+            client.audit_codes=re.findall(r"<code>((?:[A-F0-9]{4}-){4}[A-F0-9]{4})</code>",result.get_data(as_text=True))
         return client
+
+    def verification(self,admin):
+        return {"current_password":self.password,"method":"recovery","code":admin.audit_codes.pop(0)}
 
     def policy(self,admin,value,uid=None):
         uid=self.uid if uid is None else uid
-        return admin.post(f"/admin/users/{uid}/mfa-policy",data={"required":str(value),"csrf_token":csrf(admin,f"/admin/users/{uid}")})
+        return admin.post(f"/admin/users/{uid}/mfa-policy",data={"required":str(value),**self.verification(admin),"csrf_token":csrf(admin,f"/admin/users/{uid}")})
 
     def snapshot(self):
         with A.db() as con:
@@ -55,7 +59,7 @@ class PolicyTests(unittest.TestCase):
         with A.db() as con:
             row=con.execute("SELECT required,security_version,encrypted_secret FROM user_mfa WHERE user_id=?",(self.uid,)).fetchone()
             self.assertEqual(tuple(row),(1,1,None))
-        self.assertIn("Enrollment is pending",admin.get(f"/admin/users/{self.uid}").get_data(as_text=True))
+        self.assertIn("Enrollment pending",admin.get(f"/admin/users/{self.uid}").get_data(as_text=True))
 
     def test_remove_requirement_keeps_factor_recovery_and_replay_state(self):
         secret=self.start(); response=self.confirm(secret)
@@ -136,7 +140,7 @@ class PolicyTests(unittest.TestCase):
             con.execute("INSERT INTO user_company_access VALUES(?,?)",(self.uid,company))
             con.execute("INSERT INTO user_field_access VALUES(?,?)",(self.uid,"x_kgsales"))
         before=self.snapshot(); token=csrf(admin,f"/admin/users/{self.uid}")
-        result=admin.post(f"/admin/users/{self.uid}/mfa-policy",data={"required":"1","role":"ADMIN","status":"DISABLED","password":"Synthetic-Malicious-Password!","csrf_token":token})
+        result=admin.post(f"/admin/users/{self.uid}/mfa-policy",data={"required":"1","role":"ADMIN","status":"DISABLED","password":"Synthetic-Malicious-Password!",**self.verification(admin),"csrf_token":token})
         self.assertEqual(result.status_code,302)
         after=self.snapshot()
         for table in ("users","user_country_access","user_company_access","user_field_access"):
@@ -147,7 +151,7 @@ class PolicyTests(unittest.TestCase):
         with A.db() as con: con.execute("UPDATE users SET role='FULL_ACCESS' WHERE id=?",(self.uid,))
         self.policy(admin,1)
         html=admin.get(f"/admin/users/{self.uid}").get_data(as_text=True)
-        self.assertIn("MFA is required",html); self.assertIn("Enrollment is pending",html)
+        self.assertIn("MFA required",html); self.assertIn("Enrollment pending",html)
         self.assertIn("Enrollment pending",admin.get("/admin/users").get_data(as_text=True))
         with patch.dict(A.app.config,MFA_ENABLED=False,MFA_ENROLLMENT_ENABLED=False):
             self.assertNotIn("Sign-in security",admin.get(f"/admin/users/{self.uid}").get_data(as_text=True))
@@ -189,7 +193,7 @@ class PolicyTests(unittest.TestCase):
             revoke(con,uid)
             raise A.sqlite3.OperationalError("synthetic private error detail")
         with patch.object(A,"revoke_user_mfa",side_effect=fail):
-            result=admin.post(f"/admin/users/{self.uid}/mfa-policy",data={"required":"1","csrf_token":token})
+            result=admin.post(f"/admin/users/{self.uid}/mfa-policy",data={"required":"1",**self.verification(admin),"csrf_token":token})
         self.assertEqual(result.status_code,503)
         self.assertNotIn("synthetic private error detail",result.get_data(as_text=True))
         self.assertEqual(before,self.snapshot())

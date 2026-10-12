@@ -281,8 +281,9 @@ def analyze(path,db_path,profile,mode="add",fill_down=False,skip_invalid=False):
             "hash":digest,"signature":signature}
 
 # ---------- Import (one transaction) ----------
-def apply(path,db_path,profile,expected_hash,source_file,mode="add",fill_down=False,skip_invalid=False):
-    """Import exactly what the preview showed. Any failure rolls the whole import back."""
+def apply(path,db_path,profile,expected_hash,source_file,mode="add",fill_down=False,skip_invalid=False,on_success=None):
+    """Import exactly what the preview showed. Any failure rolls the whole import back.
+    on_success(con,result) runs before commit; it must not commit the connection."""
     plan=analyze(path,db_path,profile,mode,fill_down,skip_invalid)
     if plan["hash"]!=expected_hash: raise StalePlan("The file or the directory changed after the preview.")
     if plan["blocked"]: raise ValueError("The file has errors that block the import.")
@@ -324,8 +325,10 @@ def apply(path,db_path,profile,expected_hash,source_file,mode="add",fill_down=Fa
         s=plan["summary"]
         if (new_co,added,updated_co,updated_ct)!=(s["new_companies"],s["new_contacts"],s["update_companies"],s["update_contacts"]):
             raise RuntimeError("Import counts did not match the preview; nothing was saved.")
+        done={**plan,"result":{"new_companies":new_co,"new_contacts":added,"update_companies":updated_co,"update_contacts":updated_ct}}
+        if on_success: on_success(con,done)
         con.commit()
     except Exception:
         con.rollback(); raise
     finally: con.close()
-    return {**plan,"result":{"new_companies":new_co,"new_contacts":added,"update_companies":updated_co,"update_contacts":updated_ct}}
+    return done

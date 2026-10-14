@@ -2,7 +2,7 @@
 {% block title %}Admin · Internal Company Directory{% endblock %}
 {% block content %}
 {% macro panel_error() -%}
-<div class="notice error" role="status">This panel could not be loaded. The rest of the overview is unaffected; details are in app.log.</div>
+<div class="notice error" role="status">This information is temporarily unavailable. Please try again later.</div>
 {%- endmacro %}
 {% macro company_list(items) -%}
 <ul class="dash-list">{% for i in items %}
@@ -12,47 +12,60 @@
 <div class="admin-head">
   <div>
     <div class="eyebrow">ADMINISTRATION</div>
-    <h1>Directory overview</h1>
+    <h1>Admin overview</h1>
     <p class="muted">{{stats.companies}} companies · {{stats.contacts}} contacts · {{stats.countries}} countries · {{stats.users}} user accounts</p>
   </div>
   <div class="head-actions">
     <a class="secondary" href="{{url_for('imports_page')}}">{{icon('upload',16)}}Upload workbook</a>
-    <a class="secondary" href="{{url_for('admin_export',kind='companies')}}" download>{{icon('download',16)}}Companies CSV</a>
-    <a class="secondary" href="{{url_for('admin_export',kind='contacts')}}" download>{{icon('download',16)}}Contacts CSV</a>
-    <a class="primary" href="{{url_for('user_create')}}">{{icon('plus',16)}}Create user</a>
   </div>
 </div>
 {{ admin_nav('admin_dashboard') }}
 {% if default_pw %}<div class="notice error" role="alert"><strong>Change default passwords:</strong> {{default_pw|join(", ")}} still {{"uses" if default_pw|length==1 else "use"}} the initial password from the README. Reset {{"it" if default_pw|length==1 else "them"}} from Users → Edit access.</div>{% endif %}
-<nav class="section-nav" aria-label="Overview sections">
-  {% for id,label,key in [('attention','Needs attention','attention'),('quality','Data quality','quality'),('breakdown','Countries & networks','breakdown'),('sales','Sales coverage','sales'),('access','Access','access'),('import-health','Import health','imports'),('activity','Activity','activity')] %}
-  <a href="#{{id}}">{{label}}{% if key=='attention' and panels.attention.data and panels.attention.data.total %} <span>{{panels.attention.data.total}}</span>{% endif %}{% if panels[key].error %} <span>!</span>{% endif %}</a>
-  {% endfor %}
-</nav>
-
 {% set p=panels.attention %}
-<section class="admin-panel dash-panel" id="attention" aria-labelledby="attention-title">
-  <div class="section-head">
-    <div><h2 id="attention-title">Needs attention</h2><p class="muted dash-sub">Network memberships, KYC and agent status taken from the workbook columns.</p></div>
-    {% if p.data %}<span class="count-pill {{'warn' if p.data.total else ''}}">{{p.data.total}} item{{'s' if p.data.total!=1}}</span>{% endif %}
-  </div>
+<section class="admin-panel dash-panel renewal-panel" aria-labelledby="renewal-title">
+  <div class="section-head"><div><h2 id="renewal-title">Network renewals</h2><p class="muted dash-sub">Company membership dates from the workbook. Upcoming renewals appear first.</p></div></div>
   {% if p.error %}{{ panel_error() }}
-  {% elif not p.data.total %}<div class="dash-empty">Nothing needs attention: no expired or expiring networks, pending KYC or inactive agents.</div>
   {% else %}
-  <div class="dash-grid">
-    {% for key,title,tone,help in [('expired','Network expired','bad','Membership end date has passed.'),('soon','Expiring within 90 days','warn','Renew before the end date.'),('kyc_pending','KYC pending','warn','KYC status is pending or under review.'),('inactive','Inactive agents','bad','Agent status is inactive, suspended or similar.'),('unreadable','Unreadable expiry date','neutral','The Network Expiry cell is not a date; correct it in the workbook.')] %}
-    {% if p.data[key] %}
-    <div class="dash-group">
-      <h3><span class="badge {{tone}}">{{p.data[key]|length}}</span> {{title}}</h3>
-      <p class="dash-help">{{help}}</p>
-      {{ company_list(p.data[key]) }}
-    </div>
-    {% endif %}
-    {% endfor %}
+  <div class="renewal-counts">
+    <div><strong>{{p.data.soon|length}}</strong><span>Expiring within 90 days</span></div>
+    <div><strong>{{p.data.expired|length}}</strong><span>Expired</span></div>
   </div>
+  <div class="renewal-switch" data-renewal-switch hidden aria-label="Choose renewal list">
+    <button type="button" class="secondary" data-renewal-select="soon" aria-pressed="true" aria-controls="renewal-soon">Expiring soon</button>
+    <button type="button" class="secondary" data-renewal-select="expired" aria-pressed="false" aria-controls="renewal-expired">Expired</button>
+  </div>
+  {% for key,label in [('soon','Expiring soon'),('expired','Expired memberships')] %}
+  <section id="renewal-{{key}}" data-renewal-list="{{key}}" aria-labelledby="renewal-{{key}}-title">
+    <h3 id="renewal-{{key}}-title" class="renewal-list-title">{{label}}</h3>
+    {% if not p.data[key] %}<div class="dash-empty">{{'No memberships expire within the next 90 days.' if key=='soon' else 'No expired memberships.'}}</div>
+    {% else %}
+    <ul class="renewal-list">
+    {% for i in p.data[key][:10] %}<li><a href="{{url_for('company',company_id=i.id)}}"><span><strong>{{i.name}}</strong><small>{{i.country}}</small></span><span class="renewal-date">{{i.detail}}</span><span class="renewal-open">View details <span aria-hidden="true">&rarr;</span></span></a></li>{% endfor %}
+    </ul>
+    {% if p.data[key]|length>10 %}
+    <details class="renewal-more"><summary>Show all {{p.data[key]|length}} {{label|lower}}</summary>
+      <ul class="renewal-list">{% for i in p.data[key][10:] %}<li><a href="{{url_for('company',company_id=i.id)}}"><span><strong>{{i.name}}</strong><small>{{i.country}}</small></span><span class="renewal-date">{{i.detail}}</span><span class="renewal-open">View details <span aria-hidden="true">&rarr;</span></span></a></li>{% endfor %}</ul>
+    </details>
+    {% endif %}
+    {% endif %}
+  </section>
+  {% endfor %}
   {% endif %}
 </section>
-
+{% if not p.error %}
+<details class="admin-panel dashboard-disclosure">
+  <summary>Other items needing attention <span class="count-pill">{{p.data.kyc_pending|length+p.data.inactive|length+p.data.unreadable|length}}</span></summary>
+  <div class="disclosure-body dash-grid">
+  {% for key,title in [('kyc_pending','KYC pending'),('inactive','Inactive agents'),('unreadable','Unreadable expiry dates')] %}
+    {% if p.data[key] %}<section class="dash-group"><h3>{{title}} ({{p.data[key]|length}})</h3>{{company_list(p.data[key])}}</section>{% endif %}
+  {% endfor %}
+  {% if not (p.data.kyc_pending or p.data.inactive or p.data.unreadable) %}<p class="muted">No other items need attention.</p>{% endif %}
+  </div>
+</details>
+{% endif %}
+<details class="admin-panel dashboard-disclosure">
+  <summary>More information <span class="muted">Data quality, coverage, access and activity</span></summary>
+  <div class="disclosure-body">
 {% set p=panels.quality %}
 <section class="admin-panel dash-panel" id="quality" aria-labelledby="quality-title">
   <div class="section-head">
@@ -191,7 +204,7 @@
   {% endif %}
 </section>
 
-<section class="admin-panel"><div class="section-head"><h2>Recent imports</h2><a class="secondary small" href="{{url_for('imports_page')}}">Manage imports →</a></div>{% if imports %}<div class="table-wrap"><table><thead><tr><th>Source</th><th>Country</th><th>Status</th><th>Processed</th><th>Imported</th><th>When</th></tr></thead><tbody>{% for i in imports %}<tr><td>{{i.source_file}}</td><td>{{i.country}}</td><td><span class="status {{'disabled' if i.status=='FAILED' else ''}}">{{i.status}}</span></td><td>{{i.records_processed}}</td><td>{{i.records_imported}}</td><td>{{i.imported_at|when}}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">No imports recorded yet.</p>{% endif %}</section>
+<p class="dash-note"><a href="{{url_for('imports_page')}}">View import history and manage workbooks &rarr;</a></p>
 {% set p=panels.activity %}
 <section class="admin-panel dash-panel" id="activity" aria-labelledby="activity-title">
   <div class="section-head">
@@ -218,4 +231,6 @@
   </div>
   {% endif %}
 </section>
+  </div>
+</details>
 {% endblock %}

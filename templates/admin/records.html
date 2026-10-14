@@ -8,6 +8,10 @@
     <p class="muted">{{summary.companies}} companies · {{summary.contacts}} contacts · {{summary.countries}} countries · database {{(summary.size/1024)|round|int}} KB · last import {{summary.last.imported_at|when if summary.last else 'never'}}</p>
   </div>
 </div>
+<div class="head-actions records-exports">
+  <a class="secondary" href="{{url_for('admin_export',kind='companies')}}" download>{{icon('download',16)}}Companies CSV</a>
+  <a class="secondary" href="{{url_for('admin_export',kind='contacts')}}" download>{{icon('download',16)}}Contacts CSV</a>
+</div>
 {{ admin_nav('admin_records') }}
 <form class="searchbar compact" method="get" role="search">
   {{icon('search',18)}}

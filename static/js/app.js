@@ -238,6 +238,21 @@ document.addEventListener('click', event => {
   }));
 })();
 
+// Renewal lists remain available when JavaScript is disabled.
+document.addEventListener('DOMContentLoaded', () => {
+  const controls = document.querySelector('[data-renewal-switch]');
+  if (!controls) return;
+  const lists = document.querySelectorAll('[data-renewal-list]');
+  const buttons = controls.querySelectorAll('[data-renewal-select]');
+  const select = key => {
+    lists.forEach(list => { list.hidden = list.dataset.renewalList !== key; });
+    buttons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.renewalSelect === key)));
+  };
+  buttons.forEach(button => button.addEventListener('click', () => select(button.dataset.renewalSelect)));
+  select('soon');
+  controls.hidden = false;
+});
+
 // Admin account actions: progressive disclosure only; the server still verifies every sensitive save.
 document.addEventListener('DOMContentLoaded', () => {
   const setVerification = (form, active) => {

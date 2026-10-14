@@ -1,5 +1,6 @@
 """Synthetic checks; never import app.py or open business data/secrets."""
 import ast
+from functools import wraps
 import io
 import logging
 from pathlib import Path
@@ -13,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from flask import Flask, flash, redirect, request, url_for
 from werkzeug.utils import secure_filename
 from utils.upload_archive import preserve_upload
+from utils.backup_lock import file_lock
 
 
 class UploadArchiveTests(unittest.TestCase):
@@ -60,12 +62,13 @@ class UploadArchiveTests(unittest.TestCase):
         # Execute only the two real route definitions, excluding startup code.
         tree = ast.parse((Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8"))
         definitions = [n for n in tree.body if isinstance(n, ast.FunctionDef)
-                       and n.name in ("imports_page", "mapped_upload")]
+                       and n.name in ("coordinated_import", "imports_page", "mapped_upload")]
         app = Flask(__name__)
         app.secret_key = "synthetic-test-only"
         app.add_url_rule("/review/<profile>", endpoint="mapped_review", view_func=lambda profile: "review")
         app.add_url_rule("/confirm", endpoint="import_upload_confirm", view_func=lambda: "confirm")
         namespace = dict(app=app, admin_required=lambda f: f, request=request,
+                         wraps=wraps, file_lock=file_lock,
                          flash=flash, redirect=redirect, url_for=url_for,
                          secure_filename=secure_filename, secrets=secrets,
                          ROOT=self.root, IMPORTS=self.imports, logging=logging,

@@ -14,6 +14,7 @@ from utils.fields import build_company_detail, nearest_expiry
 from utils import dashboard, profile_import, security
 from utils.status import agent_status, country_code, search_status
 from utils.upload_archive import preserve_upload
+from utils.backup_lock import file_lock
 
 ROOT=Path(__file__).resolve().parent
 DB=ROOT/"directory.db"; DATA=ROOT/"data"; IMPORTS=ROOT/"imports"
@@ -1020,6 +1021,17 @@ def user_delete(uid):
 # back) and the database is backed up just before the real import.
 BACKUPS=ROOT/"backups"; BACKUP_KEEP=10
 PENDING=re.compile(r"[0-9a-f]{12}_[A-Za-z0-9_.-]+\.xlsx")
+
+def coordinated_import(view):
+    @wraps(view)
+    def locked(*args,**kwargs):
+        try:
+            with file_lock(ROOT/".backup-import.lock",timeout=5):
+                return view(*args,**kwargs)
+        except TimeoutError:
+            flash("A backup or import is in progress. Please try again shortly.","error")
+            return redirect(url_for("imports_page"))
+    return locked
 def backup_db(label):
     """Consistent copy of the live database in backups/; only the newest BACKUP_KEEP are kept."""
     BACKUPS.mkdir(exist_ok=True)
@@ -1076,6 +1088,7 @@ def preview_import(path,source,country,confirm):
     return render_template("admin/import_preview.html",r=result,source=source,partial=partial,stale=stale,confirm=confirm,mapped=profile_import.profile_for(source))
 @app.route("/admin/imports",methods=["GET","POST"])
 @admin_required
+@coordinated_import
 def imports_page():
     if request.method=="POST":
         uploaded=request.files.get("file")
@@ -1163,12 +1176,14 @@ def import_preview():
     return preview_import(seed_path(filename),filename,detect_country(filename),{"action":url_for("import_seed"),"filename":filename}) or redirect(url_for("imports_page"))
 @app.post("/admin/imports/seed")
 @admin_required
+@coordinated_import
 def import_seed():
     filename=request.form.get("filename","")
     if not mapped_refusal(filename): run_import(seed_path(filename),filename,detect_country(filename))
     return redirect(url_for("imports_page"))
 @app.post("/admin/imports/upload/confirm")
 @admin_required
+@coordinated_import
 def import_upload_confirm():
     path=pending_path()
     try: run_import(path,path.name[13:],(request.form.get("country") or "").strip() or detect_country(path.name[13:]))
@@ -1193,6 +1208,7 @@ def mapped_pending(name):
     return IMPORTS/name
 @app.post("/admin/imports/mapped/<profile>/upload")
 @admin_required
+@coordinated_import
 def mapped_upload(profile):
     p=mapped_profile(profile); seed=request.form.get("filename")
     if seed:
@@ -1232,6 +1248,7 @@ def mapped_review(profile):
                            modes=profile_import.MODES,partial=partial,name_matches=bool(re.match(p["file_pattern"],path.name[13:],re.I)))
 @app.post("/admin/imports/mapped/<profile>/confirm")
 @admin_required
+@coordinated_import
 def mapped_confirm(profile):
     p=mapped_profile(profile); path=mapped_pending(request.form.get("pending")); opts=mapped_options(request.form)
     source=path.name[13:]; label=f"{source} ({p['title']})"

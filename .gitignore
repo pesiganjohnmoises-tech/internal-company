@@ -9,6 +9,7 @@
 *.log
 imports/
 /upload_archive/
+/.backup-import.lock
 
 # Python
 __pycache__/

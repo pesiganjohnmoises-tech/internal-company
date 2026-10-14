@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils.backup_lock import file_lock
 
 FORMAT = "directory-scheduled-backup-v1"
+SOURCE_FORMAT = "directory-scheduled-backup-v2"
 PATTERN = re.compile(r"recovery-\d{8}T\d{12}Z-[0-9a-f]{32}\.zip")
 # Contemporary Manila time is UTC+8, without daylight saving. Avoid an
 # additional tzdata dependency on Windows for these present-day snapshots.
@@ -56,8 +57,42 @@ def check_database(path):
 
 
 def valid_member(name):
-    return (name == "directory.db" or
+    return (name == "directory.db" or (name.startswith("source/") and source_member(name[7:])) or
             bool(re.fullmatch(r"(?:data|upload_archive)/[^/\\]+\.xlsx", name, re.I)))
+
+
+def source_member(name):
+    parts = name.split("/")
+    if any(not part or part in (".", "..") or part.startswith(".") for part in parts):
+        return False
+    if "\\" in name or any(part.lower() in ("old_folder", "__pycache__", "backups", "venv", "secrets") for part in parts):
+        return False
+    if name in ("app.py", "requirements.txt"):
+        return True
+    suffix = Path(name).suffix.lower()
+    return ((parts[0] in ("utils", "scripts") and suffix == ".py"
+             and Path(name).stem.lower() not in ("wsgi", "config", "settings", "secrets", "credentials"))
+            or (parts[0] == "templates" and suffix == ".html")
+            or (parts[0] == "static" and suffix in (".css", ".js", ".svg", ".png", ".jpg", ".jpeg", ".ico", ".woff", ".woff2"))
+            or (name.startswith("utils/import_profiles/") and suffix == ".json"))
+
+
+def copy_source(project, stage):
+    result = subprocess.run(["git", "ls-files", "-z"], cwd=project,
+                            capture_output=True, timeout=10, check=True)
+    names = [name for name in result.stdout.decode("utf-8").split("\0") if source_member(name)]
+    if not {"app.py", "requirements.txt"} <= set(names):
+        raise RuntimeError("Required tracked source files are missing")
+    for name in names:
+        original = safe_path(project / name)
+        target = stage / "source" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(original, target)
+        if digest(original) != digest(target):
+            raise RuntimeError("Source changed during snapshot")
+    status = subprocess.run(["git", "status", "--porcelain", "--", *names], cwd=project,
+                            capture_output=True, timeout=10, check=True)
+    return bool(status.stdout)
 
 
 def verify(archive):
@@ -67,9 +102,15 @@ def verify(archive):
         if len(names) != len(set(names)):
             raise ValueError("Duplicate archive members")
         manifest = json.loads(z.read("manifest.json"))
-        if manifest.get("format") != FORMAT:
+        if manifest.get("format") not in (FORMAT, SOURCE_FORMAT):
             raise ValueError("Unrecognized backup format")
         files = manifest["files"]
+        has_source = any(name.startswith("source/") for name in files)
+        if has_source and (manifest.get("format") != SOURCE_FORMAT or
+                           not {"source/app.py", "source/requirements.txt"} <= set(files)):
+            raise ValueError("Incomplete source snapshot")
+        if manifest.get("format") == SOURCE_FORMAT and manifest.get("includes_source") != has_source:
+            raise ValueError("Source snapshot metadata mismatch")
         if "directory.db" not in files or set(names) != set(files) | {"manifest.json"}:
             raise ValueError("Unexpected archive members")
         for name, expected in files.items():
@@ -89,7 +130,7 @@ def verify(archive):
     return manifest
 
 
-def retained(records, now, daily=7, weekly=3, monthly=2):
+def retained(records, now, daily=7, weekly=3, monthly=2, source_records=None):
     local_now = now.astimezone(MANILA)
     current_week = local_now.date().isocalendar()[:2]
     current_month = (local_now.year, local_now.month)
@@ -105,18 +146,33 @@ def retained(records, now, daily=7, weekly=3, monthly=2):
         if month < current_month:
             months[month] = path
     keep = set()
-    for groups, count in ((days, daily), (weeks, weekly), (months, monthly)):
+    for groups, count in ((days, daily), (weeks, weekly)):
         keep.update(groups[key] for key in sorted(groups)[-count:])
+    if source_records is None:
+        keep.update(months[key] for key in sorted(months)[-monthly:])
+    else:
+        source_months = {}
+        for path, created in sorted(source_records, key=lambda item: (item[1], item[0].name)):
+            local = created.astimezone(MANILA)
+            source_months[(local.year, local.month)] = path
+        selected = sorted(source_months)[-monthly:]
+        keep.update(source_months[key] for key in selected)
+        # Preserve legacy monthly history while source snapshots accumulate.
+        remaining = monthly - len(selected)
+        eligible = sorted(key for key in months if key not in selected)
+        if remaining:
+            keep.update(months[key] for key in eligible[-remaining:])
     return keep
 
 
-def create_backup(project, destination, now):
+def create_backup(project, destination, now, include_source=False):
     source = safe_path(project / "directory.db")
     if not source.is_file():
         raise FileNotFoundError("Source database is missing")
     with tempfile.TemporaryDirectory(dir=destination, prefix=".staging-") as tmp:
         stage = Path(tmp)
         with file_lock(project / ".backup-import.lock", timeout=60):
+            source_dirty = copy_source(project, stage) if include_source else None
             deadline = time.monotonic() + 600
             def progress(status, remaining, total):
                 if time.monotonic() > deadline:
@@ -145,7 +201,9 @@ def create_backup(project, destination, now):
         check_database(stage / "directory.db")
         files = {p.relative_to(stage).as_posix(): {"size": p.stat().st_size, "sha256": digest(p)}
                  for p in stage.rglob("*") if p.is_file()}
-        manifest = {"format": FORMAT, "created_utc": now.isoformat(),
+        manifest = {"format": SOURCE_FORMAT, "created_utc": now.isoformat(),
+                    "includes_source": include_source, "source_dirty": source_dirty,
+                    "python_version": sys.version.split()[0],
                     "git_commit": revision.stdout.strip() if revision.returncode == 0 else None,
                     "files": files}
         (stage / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -171,8 +229,7 @@ def backup(args):
     os.chmod(destination, 0o700)
     with file_lock(destination / ".scheduled-backup.lock", timeout=0):
         now = datetime.now(timezone.utc)
-        create_backup(project, destination, now)
-        records = []
+        records, source_records = [], []
         # Fail closed: a damaged recognized archive prevents all housekeeping.
         for path in destination.iterdir():
             if not PATTERN.fullmatch(path.name):
@@ -182,7 +239,19 @@ def backup(args):
             if created > now:
                 raise ValueError("Future backup timestamp; cleanup cancelled")
             records.append((path, created))
-        keep = retained(records, now, args.daily, args.weekly, args.monthly)
+            if manifest.get("includes_source"):
+                source_records.append((path, created))
+        local_now = now.astimezone(MANILA)
+        month = (local_now.year, local_now.month)
+        has_month_source = any((created.astimezone(MANILA).year, created.astimezone(MANILA).month) == month
+                               for _, created in source_records)
+        include_source = getattr(args, "include_source_now", False) or not has_month_source
+        new = create_backup(project, destination, now, include_source=include_source)
+        records.append((new, now))
+        if include_source:
+            source_records.append((new, now))
+        logging.info("Source snapshot included: %s", include_source)
+        keep = retained(records, now, args.daily, args.weekly, args.monthly, source_records)
         expired = sorted(path for path, _ in records if path not in keep)
         for path in expired:
             logging.info("%s %s", "DELETE" if args.cleanup else "WOULD DELETE", path)
@@ -198,7 +267,7 @@ def restore(archive, destination):
     with zipfile.ZipFile(archive) as z:
         for name in (*manifest["files"], "manifest.json"):
             target = destination / name
-            target.parent.mkdir(exist_ok=True, mode=0o700)
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             with z.open(name) as src, target.open("xb") as out:
                 shutil.copyfileobj(src, out)
     check_database(destination / "directory.db")
@@ -219,6 +288,8 @@ def main():
     mode.add_argument("--cleanup-preview", action="store_true")
     parser.add_argument("--verify", type=Path)
     parser.add_argument("--restore-to", type=Path)
+    parser.add_argument("--include-source-now", action="store_true",
+                        help="Include a source snapshot even if this month already has one")
     args = parser.parse_args()
     if min(args.daily, args.weekly, args.monthly) < 1:
         parser.error("Retention counts must be positive")

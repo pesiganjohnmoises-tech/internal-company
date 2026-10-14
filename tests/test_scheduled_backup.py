@@ -2,6 +2,7 @@
 import argparse
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import json
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -25,6 +26,13 @@ class BackupTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.project = self.root / "project"
         self.project.mkdir()
+        (self.project / "app.py").write_text("# synthetic source\n", encoding="utf-8")
+        (self.project / "requirements.txt").write_text("Flask\n", encoding="utf-8")
+        (self.project / "templates").mkdir()
+        (self.project / "templates/example.html").write_text("synthetic", encoding="utf-8")
+        subprocess.run(["git", "init", "-q", str(self.project)], check=True, capture_output=True)
+        subprocess.run(["git", "add", "app.py", "requirements.txt", "templates"],
+                       cwd=self.project, check=True, capture_output=True)
         self.destination = self.root / "backups"
         self.destination.mkdir()
         for folder in ("data", "upload_archive"):
@@ -114,6 +122,60 @@ class BackupTests(unittest.TestCase):
                                     cwd=ROOT, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("TimeoutError", result.stderr)
+
+    def test_first_run_source_and_same_month_daily_only(self):
+        B.backup(self.args)
+        first = next(self.destination.glob("recovery-*.zip"))
+        self.assertTrue(B.verify(first)["includes_source"])
+        B.backup(self.args)
+        archives = list(self.destination.glob("recovery-*.zip"))
+        self.assertEqual(sum(B.verify(p)["includes_source"] for p in archives), 1)
+        self.args.cleanup = True
+        B.backup(self.args)
+        self.assertTrue(first.exists())  # Newer data-only daily cannot evict monthly source.
+
+    def test_source_restore_exclusions_and_forced_snapshot(self):
+        (self.project / "untracked.py").write_text("not archived")
+        archive = B.create_backup(self.project, self.destination,
+                                  datetime.now(timezone.utc), include_source=True)
+        manifest = B.verify(archive)
+        self.assertIn("source/app.py", manifest["files"])
+        self.assertNotIn("source/untracked.py", manifest["files"])
+        target = self.root / "source-restore"
+        B.restore(archive, target)
+        self.assertEqual((target / "source/templates/example.html").read_text(), "synthetic")
+        for name in ("../app.py", "utils/../app.py", "utils/secrets.py", "wsgi.py",
+                     "utils/__pycache__/cache.py", "OLD_FOLDER/app.py", "backups/app.py"):
+            self.assertFalse(B.source_member(name), name)
+        self.args.include_source_now = True
+        B.backup(self.args)
+        self.assertEqual(sum(B.verify(p)["includes_source"]
+                             for p in self.destination.glob("recovery-*.zip")), 2)
+
+    def test_month_boundary_and_failed_source_retry(self):
+        prior = datetime(2026, 9, 30, 15, 59, tzinfo=timezone.utc)
+        old = B.create_backup(self.project, self.destination, prior, include_source=True)
+        with patch.object(B, "copy_source", side_effect=RuntimeError("source failure")):
+            with self.assertRaises(RuntimeError):
+                B.backup(self.args)
+        self.assertEqual(list(self.destination.glob("recovery-*.zip")), [old])
+        B.backup(self.args)
+        self.assertEqual(sum(B.verify(p)["includes_source"]
+                             for p in self.destination.glob("recovery-*.zip")), 2)
+
+    def test_legacy_archive_still_restores(self):
+        archive = self.make()
+        with zipfile.ZipFile(archive) as z:
+            members = {name: z.read(name) for name in z.namelist()}
+        manifest = json.loads(members["manifest.json"])
+        manifest["format"] = B.FORMAT
+        for name in ("includes_source", "source_dirty", "python_version"):
+            manifest.pop(name)
+        members["manifest.json"] = json.dumps(manifest).encode()
+        with zipfile.ZipFile(archive, "w") as z:
+            for name, content in members.items():
+                z.writestr(name, content)
+        B.restore(archive, self.root / "legacy-restore")
 
 
 if __name__ == "__main__":

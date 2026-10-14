@@ -8,6 +8,7 @@
 .local-mysql/
 *.log
 imports/
+/upload_archive/
 
 # Python
 __pycache__/

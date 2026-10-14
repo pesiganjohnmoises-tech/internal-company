@@ -13,6 +13,7 @@ from utils.importer import import_workbook, column_map, detect_country, backfill
 from utils.fields import build_company_detail, nearest_expiry
 from utils import dashboard, profile_import, security
 from utils.status import agent_status, country_code, search_status
+from utils.upload_archive import preserve_upload
 
 ROOT=Path(__file__).resolve().parent
 DB=ROOT/"directory.db"; DATA=ROOT/"data"; IMPORTS=ROOT/"imports"
@@ -1085,6 +1086,11 @@ def imports_page():
         override=(request.form.get("country") or "").strip()
         if not override and mapped_refusal(name): return redirect(url_for("imports_page"))
         dest=IMPORTS/(secrets.token_hex(6)+"_"+name); uploaded.save(dest)
+        try: preserve_upload(dest,ROOT/"upload_archive")
+        except Exception:
+            logging.exception("Excel upload preservation failed")
+            flash("The upload could not be preserved. Please try again.","error")
+            return redirect(url_for("imports_page"))
         country=override or detect_country(name)
         page=preview_import(dest,name,country,{"action":url_for("import_upload_confirm"),"pending":dest.name,"country":country})
         if page: return page
@@ -1200,7 +1206,13 @@ def mapped_upload(profile):
     # The file under review is a private copy, so a change to data/ cannot alter what was previewed.
     dest=IMPORTS/(secrets.token_hex(6)+"_"+name)
     if seed: shutil.copyfile(src,dest)
-    else: uploaded.save(dest)
+    else:
+        uploaded.save(dest)
+        try: preserve_upload(dest,ROOT/"upload_archive")
+        except Exception:
+            logging.exception("Excel upload preservation failed")
+            flash("The upload could not be preserved. Please try again.","error")
+            return redirect(url_for("imports_page"))
     logging.info("Admin %s started mapped import profile=%s file=%s",current_user()["username"],p["name"],name)
     return redirect(url_for("mapped_review",profile=p["name"],pending=dest.name))
 @app.get("/admin/imports/mapped/<profile>/review")

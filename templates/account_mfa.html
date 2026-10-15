@@ -10,6 +10,7 @@
   {% if enabled and not secret %}
     <p class="notice">Your authenticator is enrolled.</p>
     <p class="muted">Keep your recovery codes somewhere safe. Your setup key is no longer displayed.</p>
+    {% if enrollment_user.role=='ADMIN' %}
     <p>Each change requires your current password and a fresh authenticator code or unused recovery code. A code already used to sign in cannot be reused; wait for the next code.</p>
     {% for action,label in [('replace','Replace authenticator'),('regenerate','Generate new recovery codes'),('disable','Disable optional MFA')] %}
     {% if action!='disable' or not required %}
@@ -27,6 +28,7 @@
     {% endif %}
     {% endfor %}
     {% if required %}<p class="muted">MFA is required for your account and cannot be disabled.</p>{% endif %}
+    {% else %}<p class="muted">Contact an administrator to reset your password or change your MFA setup. You cannot replace or remove your authenticator or regenerate recovery codes here.</p>{% endif %}
   {% elif secret %}
     {% if enabled %}<p class="notice">Your current authenticator stays active until you confirm this replacement. Canceling keeps your current setup.</p>{% endif %}
     <h2>Scan with your authenticator</h2>

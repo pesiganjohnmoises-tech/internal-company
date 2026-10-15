@@ -222,8 +222,8 @@ class EnrollmentTests(unittest.TestCase):
         page=self.client.get("/account/mfa").get_data(as_text=True)
         self.assertIn("authenticator is enrolled",page)
         for value in [secret,*codes]: self.assertNotIn(value,page)
-        self.assertEqual(self.client.get("/account/mfa/qr").status_code,404)
-        self.assertEqual(self.confirm(secret).status_code,302)
+        self.assertEqual(self.client.get("/account/mfa/qr").status_code,403)
+        self.assertEqual(self.confirm(secret).status_code,403)
         log=(TMP/"app.log").read_text(encoding="utf-8")
         for value in [secret,*codes]: self.assertNotIn(value,log)
 
@@ -241,7 +241,7 @@ class EnrollmentTests(unittest.TestCase):
 
     def test_existing_enrollment_cannot_be_replaced(self):
         secret=self.start(); self.confirm(secret)
-        self.assertEqual(self.post("start",current_password=self.password).status_code,302)
+        self.assertEqual(self.post("start",current_password=self.password).status_code,403)
         with A.db() as con:
             encrypted=con.execute("SELECT encrypted_secret FROM user_mfa WHERE user_id=?",(self.uid,)).fetchone()[0]
             self.assertEqual(A.mfa.decrypt_secret(A.app.extensions["mfa_cipher"],self.uid,encrypted),secret)

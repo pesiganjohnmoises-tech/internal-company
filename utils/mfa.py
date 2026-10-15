@@ -264,12 +264,14 @@ def pending_enrollment(con,cipher,user_id,token,sid,stamp=None):
     if not isinstance(token,str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}",token):
         raise MFAEnrollmentError("Setup expired. Verify your password to start again.")
     row=con.execute("""SELECT mc.encrypted_pending_secret,mc.password_version,mc.security_version,
-        u.password_hash,u.status,um.security_version,um.encrypted_secret
+        u.password_hash,u.status,um.security_version,um.encrypted_secret,u.role
         FROM mfa_challenges mc JOIN users u ON u.id=mc.user_id JOIN user_mfa um ON um.user_id=u.id
         WHERE mc.token_hash=? AND mc.user_id=? AND mc.purpose='enroll' AND mc.expires_at>?""",
         (hashlib.sha256(token.encode()).hexdigest(),user_id,stamp)).fetchone()
     active_session=con.execute("SELECT 1 FROM security_sessions WHERE token_hash=? AND user_id=?",(hashlib.sha256(sid.encode()).hexdigest(),user_id)).fetchone()
     proof=con.execute("SELECT user_id,security_version,verified FROM mfa_session_proofs WHERE token_hash=?",(hashlib.sha256(sid.encode()).hexdigest(),)).fetchone()
+    if row and row[6] and row[7]!="ADMIN":
+        raise MFAEnrollmentError("Only an administrator can replace an enrolled authenticator.")
     if not row or row[4]!="ACTIVE" or row[2]!=row[5] or not active_session or not hmac.compare_digest(row[1],enrollment_binding(row[3],sid)) or (row[6] and (not proof or proof[0]!=user_id or proof[1]!=row[5] or proof[2]!=1)):
         raise MFAEnrollmentError("Setup expired. Verify your password to start again.")
     return decrypt_secret(cipher,user_id,row[0])

@@ -23,7 +23,11 @@ class ManagementTests(unittest.TestCase):
     post=base.post
     start=base.start
     confirm=base.confirm
-    enroll=base.enroll
+    _enroll=base.enroll
+    def enroll(self):
+        self._enroll()
+        # Self-service factor replacement and recovery rotation are admin-only.
+        with A.db() as con: con.execute("UPDATE users SET role='ADMIN' WHERE id=?",(self.uid,))
     verify=base.verify
 
     def manage(self,action,code=None,method="recovery",password=None):
@@ -77,13 +81,14 @@ class ManagementTests(unittest.TestCase):
         pending=self.login(); self.assertEqual(self.verify(pending,self.codes[2],"recovery").status_code,200)
         self.assertEqual(self.verify(pending,new[0],"recovery").status_code,302)
 
-    def test_optional_disable_revokes_codes_and_returns_password_only(self):
+    def test_nonadmin_optional_disable_preserves_factor_and_codes(self):
         self.enroll(); other=self.login(); self.verify(other,self.codes[1],"recovery")
-        self.assertEqual(self.manage("disable").status_code,302)
-        self.assertIsNone(self.row()["encrypted_secret"])
-        self.assertEqual(other.get("/search").location,"/login")
-        self.assertEqual(self.login().get("/search").status_code,200)
-        with A.db() as con: self.assertEqual(con.execute("SELECT COUNT(*) FROM mfa_recovery_codes WHERE user_id=?",(self.uid,)).fetchone()[0],0)
+        with A.db() as con: con.execute("UPDATE users SET role='USER' WHERE id=?",(self.uid,))
+        before=self.row()
+        self.assertEqual(self.manage("disable").status_code,403)
+        self.assertEqual(self.row(),before)
+        self.assertEqual(other.get("/search").status_code,200)
+        with A.db() as con: self.assertEqual(con.execute("SELECT COUNT(*) FROM mfa_recovery_codes WHERE user_id=?",(self.uid,)).fetchone()[0],10)
 
     def test_required_disable_is_denied_and_hidden(self):
         self.enroll()
@@ -122,8 +127,7 @@ class ManagementTests(unittest.TestCase):
 
     def reset(self,admin,code,uid=None,**extra):
         uid=self.uid if uid is None else uid
-        return admin.post(f"/admin/users/{uid}/mfa-reset",data={"current_password":self.password,"method":"recovery","code":code,
-            "confirm_user_id":str(uid),"identity_verified":"1","csrf_token":csrf(admin,f"/admin/users/{uid}"),**extra})
+        return admin.post(f"/admin/users/{uid}/mfa-reset",data={"csrf_token":csrf(admin,f"/admin/users/{uid}"),**extra})
 
     def test_admin_reset_preserves_policy_and_requires_enrollment(self):
         self.enroll(); before=self.row(); admin,_,codes=self.make_admin()
@@ -140,14 +144,13 @@ class ManagementTests(unittest.TestCase):
         self.assertEqual(result.status_code,200); self.assertEqual(self.row()["recovery_required"],0)
         self.assertEqual(pending.get("/search").status_code,200)
 
-    def test_admin_reset_needs_identity_password_factor_and_rejects_self(self):
+    def test_admin_reset_uses_verified_session_and_rejects_self(self):
         self.enroll(); admin,uid,codes=self.make_admin(); before=self.row()
-        self.assertEqual(self.reset(admin,codes[0],identity_verified="0").status_code,400)
-        self.assertEqual(self.reset(admin,codes[0],confirm_user_id="999").status_code,400)
         self.assertEqual(self.reset(admin,codes[0],uid=uid).status_code,400)
-        self.reset(admin,codes[0],current_password="wrong")
         self.assertEqual(self.row(),before)
+        with A.db() as con: con.execute("UPDATE users SET role='USER' WHERE id=?",(self.uid,))
         self.assertEqual(self.reset(self.client,self.codes[0]).status_code,403)
+        self.assertEqual(self.reset(admin,codes[0]).status_code,302)
         self.assertNotIn('mfa-reset',admin.get(f"/admin/users/{uid}").get_data(as_text=True))
 
     def test_management_rollback_and_flag_off(self):
@@ -194,7 +197,7 @@ class ManagementTests(unittest.TestCase):
             try:
                 with A.db() as con:
                     con.execute("BEGIN IMMEDIATE")
-                    A.mfa.verify_management(con,A.app.extensions["mfa_cipher"],self.uid,sid,user["password_hash"],self.codes[0],"recovery","USER")
+                    A.mfa.verify_management(con,A.app.extensions["mfa_cipher"],self.uid,sid,user["password_hash"],self.codes[0],"recovery","ADMIN")
                 return True
             except A.mfa.MFAChallengeError: return False
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool: self.assertEqual(sorted(pool.map(lambda _:consume(),range(2))),[False,True])

@@ -255,6 +255,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Admin account actions: progressive disclosure only; the server still verifies every sensitive save.
 document.addEventListener('DOMContentLoaded', () => {
+  const resetPanel = document.querySelector('[data-mfa-reset-panel]');
+  const resetDialog = document.querySelector('[data-mfa-reset-dialog]');
+  if (resetPanel && resetDialog && typeof resetDialog.showModal === 'function') {
+    const resetForm = resetPanel.querySelector('[data-mfa-reset-form]');
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'danger';
+    trigger.textContent = resetPanel.querySelector('summary').textContent;
+    trigger.setAttribute('aria-haspopup', 'dialog');
+    resetPanel.before(trigger);
+    resetDialog.append(resetForm);
+    resetPanel.hidden = true;
+    resetForm.querySelector('[data-mfa-reset-fallback-cancel]').hidden = true;
+    const cancel = resetForm.querySelector('[data-mfa-reset-cancel]');
+    cancel.hidden = false;
+    trigger.addEventListener('click', () => { resetDialog.showModal(); cancel.focus(); });
+    cancel.addEventListener('click', () => resetDialog.close());
+    resetDialog.addEventListener('close', () => trigger.focus());
+  }
   const setVerification = (form, active) => {
     const panel = form.querySelector('[data-admin-verification]');
     panel.hidden = !active;

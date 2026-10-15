@@ -157,19 +157,22 @@
     </form>
   {% endif %}
   {% if target.id!=user.id %}
-  <details class="security-recovery"><summary>Recover a lost authenticator</summary>
-    <p>First verify the account owner's identity through your approved company procedure. This confirmation records your acknowledgement; it does not perform identity verification.</p>
-    <form method="post" action="{{url_for('user_mfa_reset',uid=target.id)}}" class="loginform">
+  <details class="security-recovery" data-mfa-reset-panel><summary>Reset MFA and require enrollment</summary>
+    <form method="post" action="{{url_for('user_mfa_reset',uid=target.id)}}" class="loginform" data-mfa-reset-form>
       <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
-      <label><input type="checkbox" name="identity_verified" value="1" required> I verified the account owner's identity.</label>
-      <label>Type user ID {{target.id}} to confirm<input name="confirm_user_id" inputmode="numeric" required></label>
-      <label>Your current password<input type="password" name="current_password" autocomplete="current-password" maxlength="256" required></label>
-      <label>Your verification method<select name="method"><option value="totp">Authenticator code</option><option value="recovery">Recovery code</option></select></label>
-      <label>Your fresh verification code<input name="code" autocomplete="one-time-code" maxlength="24" required></label>
-      <p class="tiny">Revokes this user's authenticator, recovery codes, pending logins and all sessions. Preserves their password, roles, grants and MFA policy. Re-enrollment is mandatory before access.</p>
-      <button class="danger" type="submit">Reset authenticator and require enrollment</button>
+      <p id="mfa-reset-question">Reset MFA for this user? They will need to set up their authenticator again before accessing the directory.</p>
+      <p><strong>{{full_name or target.username}}</strong> (@{{target.username}})</p>
+      <p class="tiny">Revokes their authenticator, recovery codes, pending logins and all sessions. Preserves their password, role, permissions and MFA policy.</p>
+      <div class="security-actions">
+        <button class="danger" type="submit">Yes, reset MFA</button>
+        <button class="secondary" type="button" data-mfa-reset-cancel hidden autofocus>Cancel</button>
+        <a class="secondary" href="{{url_for('user_edit',uid=target.id)}}" data-mfa-reset-fallback-cancel>Cancel</a>
+      </div>
     </form>
   </details>
+  <dialog class="mfa-reset-dialog" aria-labelledby="mfa-reset-title" aria-describedby="mfa-reset-question" data-mfa-reset-dialog>
+    <h2 id="mfa-reset-title">Reset authenticator</h2>
+  </dialog>
   {% else %}<p class="muted">Use Account security to replace your own authenticator. You cannot reset your own admin MFA here.</p>{% endif %}
 </section>
 {% endif %}

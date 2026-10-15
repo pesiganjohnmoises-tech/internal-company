@@ -62,10 +62,12 @@ if app.config["MFA_ENABLED"]:
 csrf=CSRFProtect(app)
 @app.url_defaults
 def static_version(endpoint,values):
-    """Static links carry the file's modification time (?v=...), so browsers fetch a changed CSS/JS file
-    instead of a cached copy."""
+    """Version static links by content, including updates that preserve file timestamps."""
     if endpoint=="static" and "filename" in values and "v" not in values:
-        try: values["v"]=int((ROOT/"static"/values["filename"]).stat().st_mtime)
+        try:
+            asset=(ROOT/"static"/values["filename"]).resolve()
+            if asset.is_relative_to((ROOT/"static").resolve()):
+                values["v"]=hashlib.sha256(asset.read_bytes()).hexdigest()[:16]
         except OSError: pass
 # Rotated at 1 MB with 3 old files kept, so the log cannot fill the disk; the activity panel reads the current file.
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s",
@@ -490,6 +492,12 @@ def mfa_enrollment_access(fn):
                 g.mfa_enrollment_user={**{k:pending[k] for k in ("id","username","first_name","last_name","role","status")},"display_name":display_name(pending)}
                 g.mfa_enrollment_sid=None; g.mfa_enrollment_token=session["mfa_pending"]
             else: return redirect(url_for("login"))
+            if g.mfa_enrollment_user["role"]!="ADMIN":
+                with closing(db()) as c: state=mfa.account_state(c,g.mfa_enrollment_user)
+                if state["enabled"]:
+                    if request.method=="POST" or request.endpoint=="account_mfa_qr": abort(403)
+                    # Old replacement challenges must not expose a new setup key.
+                    g.mfa_enrollment_token=None
             return fn(*args,**kwargs)
         except mfa.MFAChallengeError:
             session.clear(); flash("Sign-in expired. Enter your password again.","error")
@@ -584,6 +592,7 @@ def fresh_mfa_inputs(user,return_url):
 @login_required
 def account_mfa_manage():
     mfa_available(); u=current_user(); action=request.form.get("action","")
+    if u["role"]!="ADMIN": abort(403)
     if action not in ("replace","regenerate","disable"): abort(400)
     try:
         inputs,response=fresh_mfa_inputs(u,url_for("account_mfa"))
@@ -942,25 +951,32 @@ def user_edit(uid):
 def user_mfa_reset(uid):
     mfa_available(); actor=current_user(); destination=url_for("user_edit",uid=uid)
     if uid==actor["id"]: abort(400)
-    if request.form.getlist("confirm_user_id")!=[str(uid)] or request.form.getlist("identity_verified")!=["1"]: abort(400)
     try:
-        inputs,response=fresh_mfa_inputs(actor,destination)
-        if response is not None: return response
-        password_hash,code,method,attempt=inputs
         with closing(db()) as c,c:
             c.execute("BEGIN IMMEDIATE")
+            # Recheck authorization under the write lock, without consuming a fresh MFA code.
+            verified=c.execute("""SELECT u.*,s.started session_started,s.seen session_seen,p.verified,p.security_version
+                FROM users u JOIN security_sessions s ON s.user_id=u.id
+                JOIN mfa_session_proofs p ON p.token_hash=s.token_hash AND p.user_id=u.id
+                WHERE u.id=? AND s.token_hash=?""",(actor["id"],security.opaque(session["sid"]))).fetchone()
+            flags=mfa.account_state(c,verified) if verified else None
+            stamp=time.time()
+            if (not verified or verified["role"]!="ADMIN" or verified["status"]!="ACTIVE"
+                or password_version(verified["password_hash"])!=session.get("pwv")
+                or stamp-verified["session_started"]>SESSION_MAX or stamp-verified["session_seen"]>SESSION_IDLE
+                or not flags["enabled"] or verified["verified"]!=1 or verified["security_version"]!=flags["version"]
+                or session.get("mfa_version")!=flags["version"] or session.get("mfa_verified") is not True):
+                raise mfa.MFAChallengeError("Sign in again before resetting MFA.")
             target=c.execute("SELECT id FROM users WHERE id=?",(uid,)).fetchone()
             if not target: abort(404)
-            mfa.verify_management(c,app.extensions["mfa_cipher"],actor["id"],session["sid"],password_hash,code,method,"ADMIN")
             mfa.reset_factor(c,uid)
-            c.execute("DELETE FROM security_events WHERE token=?",(attempt,))
-        logging.info("MFA recovery reset actor_id=%s target_id=%s identity_confirmation=recorded",actor["id"],uid)
+        logging.info("MFA recovery reset actor_id=%s target_id=%s",actor["id"],uid)
         flash("Authenticator reset. All user sessions and recovery codes were revoked. The user must enroll again before accessing the directory.","success")
         return redirect(destination)
     except mfa.MFAChallengeError:
         logging.warning("MFA recovery rejected actor_id=%s target_id=%s",actor["id"],uid)
-        flash("Fresh verification failed. Use a fresh code and check your password.","error")
-        return redirect(destination)
+        session.clear(); flash("Your admin session is no longer verified. Sign in again before resetting MFA.","error")
+        return redirect(url_for("login"))
     except (sqlite3.Error,mfa.MFASecretError):
         logging.error("MFA recovery unavailable actor_id=%s target_id=%s",actor["id"],uid)
         return mfa_unavailable()

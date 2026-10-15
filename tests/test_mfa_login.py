@@ -257,7 +257,7 @@ except mfa.MFAChallengeError:
         client=self.pending()
         self.assertEqual(self.verify(client,self.codes[0],"recovery").status_code,302)
         stale=self.pending()
-        result=client.post("/account/password",data={"current_password":self.password,"new_password":"Synthetic-New-Admin-Password!","confirm_password":"Synthetic-New-Admin-Password!","csrf_token":csrf(client,"/account/password")})
+        result=client.post("/account/password",data={"current_password":self.password,"method":"recovery","code":self.codes[1],"new_password":"Synthetic-New-Admin-Password!","confirm_password":"Synthetic-New-Admin-Password!","csrf_token":csrf(client,"/account/password")})
         self.assertEqual(result.status_code,302)
         self.assertEqual(client.get("/admin").status_code,200)
         self.assertEqual(stale.get("/login/mfa").location,"/login")

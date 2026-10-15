@@ -200,7 +200,7 @@ retention cleanup. Preserve compatible recovery tooling during code rollback.
 See [workflow and matching plan](WORKBOOK_APPROVAL_PLAN.md),
 [release review and rollout/rollback runbook](WORKBOOK_RELEASE_RUNBOOK.md), and
 [backup guidance](BACKUP_SETUP.md). Production activation is not cleared by local
-tests; the existing production MFA guard and hosted rehearsal requirements remain.
+tests; hosted production MFA activation and rehearsal requirements remain.
 Run synthetic release checks with `python -B scripts/check_workbook_release.py`.
 
 ## MFA staged local implementation

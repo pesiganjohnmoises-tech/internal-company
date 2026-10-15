@@ -8,13 +8,13 @@ with `git rev-parse HEAD` after the local commit. A local commit is not a deploy
 
 ## Release decision and confirmed blockers
 
-1. **Production MFA is currently blocked by existing application configuration.**
-   `app.py` rejects `MFA_ENABLED=1` with `APP_ENV=production`. With MFA disabled,
+1. **Production MFA activation still requires hosted verification.**
+   `app.py` now accepts `MFA_ENABLED=1` with `APP_ENV=production` when key, schema,
+   secure-cookie, persistent-secret and debug checks pass. With MFA disabled,
    approval follows the existing authenticated administrator-session policy and
    does not require an MFA proof. Therefore this candidate cannot be declared a
-   production release with MFA-verified approvals until the existing production
-   gate is separately resolved and rehearsed. Do not set production to development
-   mode or turn off MFA to work around it. This review preserves the guard.
+   production release with MFA-verified approvals until hosted activation is
+   rehearsed. Keep production mode and MFA enabled for that rehearsal.
 2. **Hosted compatibility has not been verified.** Actual WSGI path, interpreter,
    dependencies, worker count, static mappings, filesystem locking/hard links,
    quotas, request timeouts, and backup/reload behavior need an approved hosted
@@ -85,8 +85,8 @@ These values were reported in the conversation, **not inspected on the host**:
 
 Preserve `SECRET_KEY`, the MFA encryption key, session/MFA records, directory grants,
 and current authentication configuration. Do not rotate credentials or modify MFA
-policy as a side effect of this release. Read `MFA_PYTHONANYWHERE.md` and resolve its
-production activation gate separately. The local marker `.mfa-local-enabled` is
+policy as a side effect of this release. Read `MFA_PYTHONANYWHERE.md` and rehearse
+production activation separately. The local marker `.mfa-local-enabled` is
 not a WSGI configuration mechanism.
 
 ## Approved rehearsal, before deployment
@@ -115,7 +115,7 @@ The following is a proposed operator procedure, not something run on the host.
    The root must already exist. Child fixtures create only their own temporary
    directories. The tests exercise SQLite transactions, cross-process coordination,
    hard-link publication, backup verification, and restore into new synthetic paths.
-4. After resolving the MFA production gate, rehearse the approved WSGI production
+4. With the locally updated MFA startup, rehearse the approved WSGI production
    configuration with separate synthetic secrets and enrolled synthetic admins.
    Verify login/enrollment, expiration/revocation, and denied USER/FULL_ACCESS access.
 5. Perform a manual synthetic browser upload; reject one submission and approve
@@ -241,5 +241,5 @@ fresh baseline/session checks, and atomic import/status/audit history. Preserve 
 existing Flask/Jinja architecture, directory permissions, MFA behavior, and direct
 import workflow. Include isolated regression coverage and release/rollback guidance.
 
-Production activation remains blocked pending the existing MFA production gate,
-approved hosted rehearsal, and separately authorized publication/deployment.
+Production activation remains blocked pending approved hosted rehearsal and
+separately authorized publication/deployment.

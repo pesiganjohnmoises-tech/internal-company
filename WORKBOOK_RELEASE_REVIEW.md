@@ -8,11 +8,11 @@ Branch: `feature/workbook-review-approval`; baseline: `25ece0d`.
 **Local release preparation is complete. Production activation is not approved.**
 This is a reviewable candidate, not evidence of a deployed or production-ready site.
 
-The existing `APP_ENV=production` / `MFA_ENABLED=1` startup guard is a confirmed
-blocker to production MFA-verified approvals. Approval requires the MFA session
-proof only when MFA is enabled; disabling MFA or using development mode is not an
-acceptable production workaround. A new synthetic acceptance check reproduces
-the guard. Resolving it requires a separately approved change and rehearsal.
+The follow-up activation change permits `APP_ENV=production` with `MFA_ENABLED=1`
+while retaining key, migrated-schema, secure-cookie, secret and debug checks.
+MFA remains an explicit opt-in. Approval requires the MFA session proof only when
+MFA is enabled; disabling MFA or using development mode is not an acceptable
+production workaround. Hosted activation still requires an approved rehearsal.
 
 Hosted runtime/filesystem behavior and a manual browser file upload remain
 unverified. No hosting configuration, production database, credentials, or logs
@@ -20,10 +20,17 @@ were accessed during this preparation. No deployment endpoint was called.
 
 ## Evidence
 
+Follow-up production activation checks use synthetic data in disposable code copies:
+production startup accepts a valid migrated configuration, rejects missing/invalid
+keys, absent schema and unsafe cookie/debug/session-key settings, and completes
+required enrollment and recovery-code sign-in for ADMIN, USER and FULL_ACCESS.
+A fresh process retains enrolled factors. Existing MFA login and enrollment suites
+were rerun; the original release report below describes the earlier candidate.
+
 - **400 Python checks passed across 19 isolated suites.** The new release tests
   also verify repeat initialization preserves healthy data/authentication/grants,
   the complete submitter/admin import flow, permission revocation, expired CSRF,
-  and the production MFA guard. `python -m pip check` reported no broken requirements.
+  and the former production MFA guard. `python -m pip check` reported no broken requirements.
 - [Machine-readable CLI results](WORKBOOK_RELEASE_TEST_RESULTS.json) retain the
   actual command outcome: all Python suites passed, but the runner returned 1
   because `node` is not installed on PATH. No application test failure was hidden.
@@ -69,7 +76,7 @@ ResourceWarnings were suppressed by the runner and are outside this review's sco
 
 ## Remaining rollout gates
 
-1. Resolve and test the production MFA activation guard through an approved change.
+1. Rehearse the locally updated production MFA startup on the approved hosted target.
 2. Confirm exact hosted target/revision/interpreter/WSGI/MFA configuration and
    private static mappings without exposing secret values.
 3. Rehearse on the intended hosted filesystem/runtime, including locks, hard links,

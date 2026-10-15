@@ -4,8 +4,10 @@ import io
 import os
 from pathlib import Path
 import runpy
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -64,11 +66,69 @@ class WorkbookReleaseTests(unittest.TestCase):
                 'confirmed':'1','confirm_replacement':'1','baseline':self.fixture.baseline})
         self.assertEqual(result.status_code,400); self.assertEqual(before,self.review.snapshot())
 
-    def test_existing_production_mfa_gate_is_a_confirmed_rollout_blocker(self):
+    def test_production_mfa_requires_valid_key_and_migrated_storage(self):
         env={**os.environ,'APP_ENV':'production','SECRET_KEY':'synthetic-production-session-key-'*2,
              'COOKIE_SECURE':'1','MFA_ENABLED':'1'}
-        result=subprocess.run([sys.executable,'-B','-c','import app'],cwd=A.ROOT,env=env,capture_output=True,text=True)
+        result=subprocess.run([sys.executable,'-B','-c','import app; assert app.app.config["MFA_ENABLED"]; assert app.app.config["SESSION_COOKIE_SECURE"]'],cwd=A.ROOT,env=env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        for changes in ({'MFA_ENCRYPTION_KEY':'invalid','MFA_ENCRYPTION_KEY_FILE':''},
+                        {'MFA_ENCRYPTION_KEY':'','MFA_ENCRYPTION_KEY_FILE':''},
+                        {'COOKIE_SECURE':'0'},{'FLASK_DEBUG':'1'},{'SECRET_KEY':''}):
+            result=subprocess.run([sys.executable,'-B','-c','import app'],cwd=A.ROOT,
+                                  env={**env,**changes},capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0)
+        # A fresh code-only copy has no migrated database; startup must not create it.
+        folder=Path(tempfile.mkdtemp(prefix='directory-production-mfa-schema-'))
+        for name in ('app.py','utils','templates','static'):
+            source=A.ROOT/name
+            if source.is_dir(): shutil.copytree(source,folder/name,ignore=shutil.ignore_patterns('__pycache__'))
+            else: shutil.copy2(source,folder/name)
+        result=subprocess.run([sys.executable,'-B','-c','import app'],cwd=folder,env=env,capture_output=True,text=True)
         self.assertNotEqual(result.returncode,0)
-        self.assertIn('MFA rollout is restricted to development',result.stderr)
+        self.assertIn('explicit storage migration',result.stderr)
+        self.assertFalse((folder/'directory.db').exists())
+
+    def test_production_required_enrollment_login_and_restart(self):
+        env={**os.environ,'APP_ENV':'production','SECRET_KEY':'synthetic-production-session-key-'*2,
+             'COOKIE_SECURE':'1','MFA_ENABLED':'1','FLASK_DEBUG':'0'}
+        code=r'''
+import app as A, re, pyotp
+def token(client,path):
+    return re.search(r'name="csrf_token" value="([^"]+)"',client.get(path).get_data(as_text=True)).group(1)
+for role in ('ADMIN','USER','FULL_ACCESS'):
+    name='production-'+role
+    with A.db() as c:
+        uid=c.execute("INSERT INTO users(username,password_hash,role,status) VALUES(?,?,?,'ACTIVE')",
+                      (name,A.generate_password_hash('Synthetic-Production-Password!'),role)).lastrowid
+        c.execute('INSERT INTO user_mfa(user_id,required) VALUES(?,1)',(uid,))
+    client=A.app.test_client()
+    response=client.post('/login',data={'username':name,'password':'Synthetic-Production-Password!',
+                                     'csrf_token':token(client,'/login')})
+    assert response.status_code==302
+    assert client.get('/search').location=='/login/mfa'
+    html=client.get('/account/mfa').get_data(as_text=True)
+    secret=re.search(r'<code class="mfa-key">([A-Z2-7]{32})</code>',html).group(1)
+    response=client.post('/account/mfa',data={'action':'confirm','code':pyotp.TOTP(secret).now(),
+                                           'csrf_token':token(client,'/account/mfa')})
+    assert response.status_code==200
+    recovery=re.findall(r'<code>((?:[A-F0-9]{4}-){4}[A-F0-9]{4})</code>',response.get_data(as_text=True))[0]
+    assert client.get('/search').status_code==200
+    assert client.get('/admin').status_code==(200 if role=='ADMIN' else 403)
+    other=A.app.test_client()
+    other.post('/login',data={'username':name,'password':'Synthetic-Production-Password!',
+                             'csrf_token':token(other,'/login')})
+    assert other.get('/search').location=='/login/mfa'
+    response=other.post('/login/mfa',data={'method':'recovery','code':recovery,'csrf_token':token(other,'/login/mfa')})
+    assert response.status_code==302
+    assert other.get('/search').status_code==200
+    assert 'Secure' in response.headers.get('Set-Cookie','')
+'''
+        result=subprocess.run([sys.executable,'-B','-c',code],cwd=A.ROOT,env=env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        result=subprocess.run([sys.executable,'-B','-c',
+            'import app; assert app.app.config["MFA_ENABLED"]; '
+            'assert app.db().execute("SELECT count(*) FROM user_mfa WHERE enabled_at IS NOT NULL").fetchone()[0]>=3'],
+            cwd=A.ROOT,env=env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
 
 if __name__=='__main__': unittest.main()

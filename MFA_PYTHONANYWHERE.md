@@ -162,12 +162,12 @@ project root must not be publicly mapped.
 
 ## 6. Activation change and staging acceptance (still pending)
 
-Current `app.py` explicitly rejects `MFA_ENABLED=1` with `APP_ENV=production`.
-The approved local loopback preview works in development mode with synthetic data;
-that is not the configuration for a hosted rollout. Do not bypass the gate by
-changing hosting to development mode. Review and approve a small activation change
-with fail-closed key/schema/configuration checks after SQLite hosting validation.
-The WSGI example must remain MFA-off until that change is implemented and tested.
+The follow-up local activation change permits `MFA_ENABLED=1` with
+`APP_ENV=production`, retaining fail-closed key/schema/configuration checks.
+MFA is still off by default; no hosting settings have been changed. Keep production
+mode for the hosted rehearsal. The historical MFA-off WSGI example above is not
+the configuration for MFA-verified workbook approvals; enabling it requires
+explicit hosting approval and SQLite/runtime validation.
 
 After activation approval, enable MFA on synthetic HTTPS staging and reload workers:
 

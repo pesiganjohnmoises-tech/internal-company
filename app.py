@@ -45,13 +45,12 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE","1" if APP_ENV=="production" else "0")=="1",
                   MAX_CONTENT_LENGTH=16*1024*1024)
 app.config["SECURITY_RATE_LIMITS"]={"login":60,"directory":120,"export":6,"import":20}
-# Local rollout flag stays off until deployment configuration is explicitly approved.
+# Explicit opt-in; production also requires secure settings, a key, and migrated storage.
 app.config["MFA_ENABLED"]=os.environ.get("MFA_ENABLED","0")=="1"
 app.config["MFA_ENROLLMENT_ENABLED"]=app.config["MFA_ENABLED"]
 if os.environ.get("MFA_ENROLLMENT_ENABLED","0")=="1" and not app.config["MFA_ENABLED"]:
     raise RuntimeError("Enrollment requires MFA_ENABLED=1 and full login enforcement.")
 if app.config["MFA_ENABLED"]:
-    if APP_ENV!="development": raise RuntimeError("MFA rollout is restricted to development until production setup is approved.")
     from utils import mfa
     app.extensions["mfa_cipher"]=mfa.configured_cipher()
     try:

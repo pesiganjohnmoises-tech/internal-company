@@ -285,9 +285,8 @@ class EnrollmentTests(unittest.TestCase):
         for _ in range(30): A.security.reserve(A.DB,[("mfa-ip","127.0.0.1",30,900)])
         self.assertEqual(self.confirm(secret).status_code,429)
 
-    def test_preview_rejects_production_and_invalid_key_at_startup(self):
-        for changes in ({"APP_ENV":"production","SECRET_KEY":"synthetic-production-session-key-32-chars","COOKIE_SECURE":"1"},
-                        {"MFA_ENCRYPTION_KEY":""},{"MFA_ENCRYPTION_KEY":"invalid"}):
+    def test_invalid_key_is_rejected_at_startup(self):
+        for changes in ({"MFA_ENCRYPTION_KEY":""},{"MFA_ENCRYPTION_KEY":"invalid"}):
             env={**os.environ,"MFA_ENABLED":"1",**changes}
             result=subprocess.run([sys.executable,"-c","import app"],cwd=TMP,env=env,capture_output=True,text=True)
             self.assertNotEqual(result.returncode,0)

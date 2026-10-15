@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}{% from "_icons.html" import icon %}
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav with context %}{% from "_icons.html" import icon %}
 {% block title %}User settings · Internal Company Directory{% endblock %}
 {% macro admin_verification(required=false, reason='Confirm this change with your own administrator credentials.') %}
 <fieldset class="admin-verification" data-admin-verification>
@@ -137,6 +137,31 @@
     <button class="primary" type="submit">{{'Save changes' if target else 'Create user'}}</button>
   </div>
 </form>
+
+{% if target %}
+<section class="admin-panel settings-card" aria-labelledby="card-workbook-upload">
+  <header class="card-head"><div><h2 id="card-workbook-upload">Workbook submission</h2>
+    <p class="muted">Full Access + Workbook Upload allows submission for admin review. It does not allow approval or changes to live data.</p>
+  </div></header>
+  {% if target.role=='FULL_ACCESS' %}
+  <form method="post" action="{{url_for('user_workbook_access',uid=target.id)}}" data-verification="workbook" data-initial-countries="{{selected_upload_countries|tojson|forceescape}}">
+    <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+    <label class="checkrow"><input type="checkbox" name="submit_workbooks" value="1" {% if selected_upload_countries %}checked{% endif %}><span><strong>Submit workbooks</strong></span></label>
+    <fieldset class="workbook-country-options">
+      <legend>Allowed upload countries</legend>
+      <div class="check-grid">{% for country in countries %}
+        <label class="checkrow"><input type="checkbox" name="upload_countries" value="{{country.id}}" {% if country.id in selected_upload_countries %}checked{% endif %}><span>{{country.name}}</span></label>
+      {% endfor %}</div>
+      {% if not countries %}<p class="muted">No countries are available yet.</p>{% endif %}
+    </fieldset>
+    <p class="muted">Select at least one country when enabling this permission. Directory access remains unchanged.</p>
+    <p class="tiny">Permitted users can upload complete country workbooks and view their own submissions. Administrators review and approve submissions under Workbook reviews.</p>
+    {{admin_verification(reason='Use your own admin credentials to grant, revoke, or change workbook submission access.')}}
+    <button class="primary" type="submit">Save workbook permission</button>
+  </form>
+  {% else %}<p class="muted">This permission is available only to Full Access accounts. Change and save the user type first. Administrators retain their existing import and approval access.</p>{% endif %}
+</section>
+{% endif %}
 
 {% if config.MFA_ENABLED and target %}
 <section class="admin-panel settings-card" aria-labelledby="card-mfa">

@@ -673,7 +673,33 @@ tr.row-flag td{background:var(--warn-bg)}
 .security-recovery{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
 .security-recovery summary{cursor:pointer;font-weight:600}
 .security-actions{display:flex;flex-wrap:wrap;gap:10px}
+.workbook-country-options{min-width:0;margin:14px 0;padding:12px;border:1px solid var(--line);border-radius:var(--r-sm)}
+.workbook-country-options legend{padding:0 6px;font-size:13px;font-weight:600;color:var(--ink-2)}
+[data-verification="workbook"] button:disabled{opacity:.55;cursor:not-allowed}
 .mfa-reset-dialog{max-width:520px;width:calc(100% - 40px);padding:24px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-lg)}
 .mfa-reset-dialog::backdrop{background:rgba(0,0,0,.55)}
 .mfa-reset-dialog h2{font:700 20px var(--font-head)}
 [data-mfa-reset-panel][hidden],[data-mfa-reset-form] [hidden]{display:none}
+/* Private workbook submission screens; reuse shared theme and form styles. */
+.workbook-form{max-width:960px;padding:24px}
+.workbook-form textarea{display:block;width:100%;box-sizing:border-box;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px}
+.workbook-form textarea:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.workbook-form .full{grid-column:1 / -1}
+.workbook-form .checkrow{display:flex;align-items:flex-start}
+.workbook-form .checkrow input{width:16px;height:16px;min-height:0;flex:0 0 16px;padding:0}
+.workbook-form dd{margin:4px 0 16px;overflow-wrap:anywhere}
+.workbook-filename,.workbook-note{overflow-wrap:anywhere}
+.workbook-note{white-space:pre-wrap}
+.workbook-pagination{display:flex;align-items:center;gap:20px;margin-top:20px}
+.review-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.review-counts dd{margin:4px 0;font-size:24px;font-weight:700}
+.review-counts dt{color:var(--muted);font-size:13px}
+.review-filter{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.review-filter input,.review-filter select,.workbook-pagination select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--input-line);border-radius:var(--r-sm);padding:9px 12px;min-height:38px}
+.review-filter label{display:grid;gap:6px}
+.review-filter input{min-width:280px}
+.review-filter input:focus-visible,.review-filter select:focus-visible,.workbook-pagination select:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.review-entry{padding:20px 0;border-top:1px solid var(--line)}
+.review-fields{table-layout:fixed;width:100%}
+.review-fields th,.review-fields td{white-space:pre-wrap;overflow-wrap:anywhere}
+.review-entry dd{margin:4px 0 12px;overflow-wrap:anywhere}

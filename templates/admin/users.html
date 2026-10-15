@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}{% from "_icons.html" import icon %}
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav with context %}{% from "_icons.html" import icon %}
 {% block title %}Users · Internal Company Directory{% endblock %}
 {% block content %}
 <div class="admin-head">
@@ -32,7 +32,7 @@
               <span><strong>{{u.display_name}}</strong>{% if u.display_name!=u.username %}<small class="table-sub">@{{u.username}}</small>{% endif %}</span>
             </span>
           </td>
-          <td data-label="Role"><span class="badge role-badge role-{{u.role|lower}}">{{role_names.get(u.role,u.role)}}</span></td>
+          <td data-label="Role"><span class="badge role-badge role-{{u.role|lower}}">{{'Full Access + Workbook Upload' if u.submit_workbooks else role_names.get(u.role,u.role)}}</span></td>
           <td data-label="Status"><span class="status {{'disabled' if u.status=='DISABLED' else ''}}">{{u.status}}</span></td>
           {% if config.MFA_ENABLED %}<td data-label="MFA">{{'Required' if u.mfa_required else 'Optional'}}<small class="table-sub">{{'Enrolled' if u.mfa_enabled else ('Enrollment pending' if u.mfa_required else 'Not enrolled')}}</small></td>{% endif %}
           <td data-label="Can see">{% if u.role!='USER' %}All {{total_companies}} companies{% elif u.visible %}{{u.visible}} of {{total_companies}} companies{% else %}<span class="warn-text">No records</span>{% endif %}</td>

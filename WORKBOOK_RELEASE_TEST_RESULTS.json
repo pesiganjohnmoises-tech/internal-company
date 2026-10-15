@@ -1,0 +1,138 @@
+{
+  "created_utc": "2026-10-15T06:23:41.360229+00:00",
+  "python": "3.14.7",
+  "platform": "win32",
+  "packages": {
+    "Flask": "3.1.3",
+    "Flask-WTF": "1.3.0",
+    "openpyxl": "3.1.5",
+    "pyotp": "2.10.0",
+    "qrcode": "8.2",
+    "cryptography": "50.0.2"
+  },
+  "suites": [
+    {
+      "suite": "test_workbook_access.py",
+      "passed": true,
+      "checks": 8,
+      "seconds": 12.78
+    },
+    {
+      "suite": "test_workbook_submissions.py",
+      "passed": true,
+      "checks": 14,
+      "seconds": 4.17
+    },
+    {
+      "suite": "test_workbook_routes.py",
+      "passed": true,
+      "checks": 5,
+      "seconds": 7.24
+    },
+    {
+      "suite": "test_workbook_review.py",
+      "passed": true,
+      "checks": 9,
+      "seconds": 14.14
+    },
+    {
+      "suite": "test_workbook_approval.py",
+      "passed": true,
+      "checks": 16,
+      "seconds": 29.72
+    },
+    {
+      "suite": "test_workbook_release.py",
+      "passed": true,
+      "checks": 4,
+      "seconds": 10.28
+    },
+    {
+      "suite": "test_import_safety.py",
+      "passed": true,
+      "checks": 7,
+      "seconds": 3.86
+    },
+    {
+      "suite": "test_import_history.py",
+      "passed": true,
+      "checks": 5,
+      "seconds": 3.43
+    },
+    {
+      "suite": "test_scheduled_backup.py",
+      "passed": true,
+      "checks": 10,
+      "seconds": 8.78
+    },
+    {
+      "suite": "test_upload_archive.py",
+      "passed": true,
+      "checks": 7,
+      "seconds": 1.73
+    },
+    {
+      "suite": "test_security_controls.py",
+      "passed": true,
+      "checks": 246,
+      "seconds": 38.66
+    },
+    {
+      "suite": "test_admin_verification.py",
+      "passed": true,
+      "checks": 16,
+      "seconds": 22.81
+    },
+    {
+      "suite": "test_account_restrictions.py",
+      "passed": true,
+      "checks": 3,
+      "seconds": 7.57
+    },
+    {
+      "suite": "test_admin_mfa_reset.py",
+      "passed": true,
+      "checks": 7,
+      "seconds": 11.96
+    },
+    {
+      "suite": "test_mfa_storage.py",
+      "passed": true,
+      "checks": 14,
+      "seconds": 5.44
+    },
+    {
+      "suite": "test_mfa_login.py",
+      "passed": true,
+      "checks": 21,
+      "seconds": 30.93
+    },
+    {
+      "suite": "test_session_contention.py",
+      "passed": true,
+      "checks": 4,
+      "seconds": 8.56
+    },
+    {
+      "suite": "test_ui_navigation.py",
+      "passed": true,
+      "checks": 3,
+      "seconds": 4.0
+    },
+    {
+      "suite": "test_theme_colors.py",
+      "passed": true,
+      "checks": 1,
+      "seconds": 0.28
+    },
+    {
+      "suite": "test_theme.cjs",
+      "passed": false,
+      "checks": null,
+      "limitation": "Node is unavailable; run this code-only suite separately."
+    }
+  ],
+  "passed": false,
+  "counted_checks": 400,
+  "scope": "Synthetic/code-only local checks. No production, deployment endpoint, company fixtures, or hosted HTTP configuration tested. ResourceWarnings from legacy connection lifetimes are suppressed."
+}

@@ -11,6 +11,12 @@ and `utils/backup_lock.py` have been deployed together and the app reloaded.
 - Destination: `/home/kargosmart/backups/internal-company-scheduled`
 - Sources: `directory.db`, top-level Excel workbooks in `data/` (excluding
   `~$` lock files), and top-level Excel files in `upload_archive/`.
+- Workbook-review feature branch: completed generated XLSX copies in
+  `workbook_submissions/` are included when present. Queue metadata is in the
+  database. Partial upload files are excluded; completed copies referenced by
+  checksum must be present and match, or backup verification fails. The updated
+  backup/restore tool is required for archives containing this new directory.
+  This does not change the hosted scheduled task until separately deployed.
 - Each ZIP includes checksums, creation time and Git commit in `manifest.json`.
 - The first successful run each Manila month also includes selected tracked
   application files under `source/`. Other daily runs contain data only.
@@ -23,6 +29,11 @@ and `utils/backup_lock.py` have been deployed together and the app reloaded.
 
 The source-directory layout is flat today. Nested workbooks or other future
 persistent files require explicit changes to the source allowlist.
+
+Workbook staging publishes files and metadata under the same backup/import
+lock. An interrupted staging operation can leave a VALIDATING record; restoring
+it does not approve it or import data. Preserve partial/incomplete records for
+inspection rather than automatically deleting them or treating them as ready.
 
 ## Consistency
 
@@ -94,6 +105,23 @@ Do not point production at the restore copy. Application-level testing must
 use isolated configuration and disabled external integrations.
 
 ## Space and recovery secrets
+
+Workbook approvals also create a verified recovery archive in the private project
+directory `backups/workbook-approvals/` before replacing any data. These use the
+same archive format and verification/restore commands described above, and include
+the database, `data/`, `upload_archive/`, and completed private submission files.
+Approval archives do not include source code or secret keys. Keep the compatible
+application/recovery tool and separate MFA-key/configuration recovery copies.
+
+The submission records its archive's relative path and committed import-history ID.
+Approval archives are not automatically pruned, and the scheduled backup's retention
+does not manage this separate folder. Budget space for a full recovery archive per
+approval attempt. Backups do not recursively include prior backups: preserve this
+folder separately when the audit history's older backup references are needed.
+Restoring an archive is a separately approved operation; restore to a new isolated
+directory first. A full database restore can discard later edits and revive older
+authentication/session state. Do not automatically restore over the live project
+after an import failure; transaction rollback already preserves its prior dataset.
 
 Initial production measurements: database 1.3 MB, `data/` 84 KB, existing
 database backups 5 MB. Measure `upload_archive/` as it grows. Budget at least

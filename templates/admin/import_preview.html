@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav with context %}
 {% block title %}Preview import · Internal Company Directory{% endblock %}
 {% block content %}
 {% set ch=r.changes %}

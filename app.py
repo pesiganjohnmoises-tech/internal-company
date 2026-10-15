@@ -1,4 +1,4 @@
-import os, re, io, csv, sqlite3, logging, secrets, time, hashlib, hmac, subprocess, unicodedata, shutil, ipaddress
+import os, re, io, csv, json, sqlite3, logging, secrets, time, hashlib, hmac, subprocess, unicodedata, shutil, ipaddress
 from functools import wraps
 from contextlib import closing
 from pathlib import Path
@@ -11,7 +11,7 @@ from werkzeug.utils import secure_filename
 from flask_wtf.csrf import CSRFProtect
 from utils.importer import import_workbook, column_map, detect_country, backfill_source_data, agent_id_from_source, utcnow, ReplacementValidationError
 from utils.fields import build_company_detail, nearest_expiry
-from utils import dashboard, profile_import, security
+from utils import dashboard, profile_import, security, workbook_access, workbook_submissions, workbook_review, workbook_approval
 from utils.status import agent_status, country_code, search_status
 from utils.upload_archive import preserve_upload
 from utils.backup_lock import file_lock
@@ -129,6 +129,8 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_contacts_company ON contacts(company_id);
         """)
         c.executescript(security.SCHEMA)
+        c.executescript(workbook_access.SCHEMA)
+        c.executescript(workbook_submissions.SCHEMA)
         for table, column, declaration in [
             ("companies","city","TEXT"),("companies","state","TEXT"),
             ("contacts","contact_type","TEXT"),("contacts","landline_no","TEXT"),
@@ -250,7 +252,13 @@ def access_sql(user,alias="co"):
 @app.context_processor
 def inject():
     # An error page must still render when the database itself is the problem.
-    try: return {"user":current_user()}
+    try:
+        user=current_user()
+        pending_workbooks=0
+        if user and user['role']=='ADMIN':
+            with closing(db()) as c:
+                pending_workbooks=c.execute("SELECT COUNT(*) FROM workbook_submissions WHERE status IN ('PENDING_REVIEW','NEEDS_REVIEW','IMPORT_FAILED')").fetchone()[0]
+        return {"user":user,"workbook_submitter":can_submit_workbooks(user),"pending_workbooks":pending_workbooks}
     except sqlite3.Error: return {"user":None}
 @app.route("/")
 def home():
@@ -277,10 +285,12 @@ def request_limits():
     if endpoint=="login" or (app.config["MFA_ENABLED"] and endpoint in ("login_mfa","account_mfa","account_mfa_qr","account_mfa_manage","user_mfa_reset")):
         limits=[("login-volume",client_ip(),app.config["SECURITY_RATE_LIMITS"]["login"],60)]
     else:
-        if endpoint not in ("search","company","admin_export","import_preview","import_seed","import_upload_confirm","mapped_upload","mapped_review","mapped_confirm","imports_page"): return None
+        if endpoint not in ("search","company","admin_export","import_preview","import_seed","import_upload_confirm","mapped_upload","mapped_review","mapped_confirm","imports_page","upload_workbook"): return None
         u=current_user() if session.get("uid") else None
         if not u: return None
         if endpoint in ("search","company"): limits=[("directory-volume",u["id"],app.config["SECURITY_RATE_LIMITS"]["directory"],60)]
+        elif endpoint=="upload_workbook" and request.method=="POST":
+            limits=[("workbook-upload-volume",u["id"],app.config["SECURITY_RATE_LIMITS"]["import"],60)]
         elif endpoint=="admin_export" and u["role"]=="ADMIN": limits=[("export-volume",u["id"],app.config["SECURITY_RATE_LIMITS"]["export"],60)]
         elif endpoint in ("import_preview","import_seed","import_upload_confirm","mapped_upload","mapped_review","mapped_confirm") or (endpoint=="imports_page" and request.method=="POST"):
             if u["role"]!="ADMIN": return None
@@ -784,6 +794,7 @@ def users():
             clause,params=access_sql(r)
             mfa_status=mfa.account_state(c,r) if app.config["MFA_ENABLED"] else None
             rows.append({**dict(r),"display_name":display_name(r),
+                         "submit_workbooks":r["role"]=="FULL_ACCESS" and bool(c.execute("SELECT 1 FROM user_workbook_upload_access WHERE user_id=? LIMIT 1",(r["id"],)).fetchone()),
                          "mfa_required":bool(mfa_status and mfa_status["required"]),"mfa_enabled":bool(mfa_status and mfa_status["enabled"]),
                          "visible":total if r["role"]!="USER" else c.execute(f"SELECT COUNT(*) FROM companies co WHERE {clause}",params).fetchone()[0]})
     shown=[r for r in rows if q.lower() in " ".join((r["username"],r["display_name"],r["role"],r["status"])).lower()] if q else rows
@@ -874,6 +885,224 @@ def get_user_id(username):
     with db() as c: return c.execute("SELECT id FROM users WHERE username=?",(username,)).fetchone()["id"]
 def get_countries():
     with db() as c: return c.execute("SELECT * FROM countries ORDER BY name").fetchall()
+
+def workbook_upload_countries(user):
+    if not user: return []
+    with closing(db()) as c: return workbook_access.submission_countries(c,user["id"])
+
+def can_submit_workbooks(user,country_id=None):
+    countries=workbook_upload_countries(user)
+    return bool(countries) if country_id is None else any(country["id"]==country_id for country in countries)
+
+def workbook_submitter_required(view):
+    @wraps(view)
+    @login_required
+    def wrapped(*args,**kwargs):
+        if not can_submit_workbooks(current_user()): abort(403)
+        try: return view(*args,**kwargs)
+        except PermissionError: abort(403)
+    return wrapped
+
+@app.get("/workbooks")
+@workbook_submitter_required
+def my_workbooks():
+    raw=request.args.get("page","1")
+    if not raw.isascii() or not raw.isdigit() or len(raw)>6 or int(raw)<1: abort(400)
+    page=int(raw)
+    rows=workbook_submissions.list_submissions(ROOT,current_user()["id"],limit=21,offset=(page-1)*20)
+    return render_template("workbooks/history.html",submissions=rows[:20],page=page,has_next=len(rows)>20)
+
+@app.route("/workbooks/upload",methods=["GET","POST"])
+@workbook_submitter_required
+def upload_workbook():
+    countries=workbook_upload_countries(current_user())
+    error=None
+    if request.method=="POST":
+        raw=request.form.get("country_id","")
+        if not raw.isascii() or not raw.isdigit() or len(raw)>18: abort(400)
+        country_id=int(raw)
+        if not can_submit_workbooks(current_user(),country_id): abort(403)
+        upload=request.files.get("workbook")
+        try:
+            if not upload or not upload.filename: raise ValueError("Choose an XLSX workbook.")
+            if request.form.getlist("complete_country")!=["1"]:
+                raise ValueError("Confirm that the workbook contains the complete country dataset.")
+            result=workbook_submissions.create_submission(ROOT,current_user()["id"],country_id,
+                upload.filename,upload.stream,note=request.form.get("note",""),complete_country=True)
+        except PermissionError: abort(403)
+        except ValueError as exc: error=str(exc)
+        except (OSError,sqlite3.Error,TimeoutError):
+            error="The submission could not be completed. Check My submissions before trying again."
+        else:
+            if not can_submit_workbooks(current_user()): abort(403)
+            return redirect(url_for("workbook_detail",submission_id=result["id"]))
+    return render_template("workbooks/upload.html",countries=countries,error=error),400 if error else 200
+
+@app.get("/workbooks/<submission_id>")
+@workbook_submitter_required
+def workbook_detail(submission_id):
+    row=workbook_submissions.get_submission(ROOT,current_user()["id"],submission_id)
+    if not row: abort(404)
+    try: summary=json.loads(row["validation_summary"])
+    except (ValueError,TypeError): summary={}
+    if not isinstance(summary,dict): summary={}
+    return render_template("workbooks/detail.html",submission=row,summary=summary)
+
+@app.get("/workbooks/<submission_id>/download")
+@workbook_submitter_required
+def download_submission(submission_id):
+    return submission_download_response(submission_id)
+
+def submission_download_response(submission_id):
+    row=workbook_submissions.get_submission(ROOT,current_user()["id"],submission_id)
+    if not row: abort(404)
+    try:
+        with workbook_submissions.verified_workbook(ROOT,current_user()["id"],submission_id) as incoming:
+            content=io.BytesIO(incoming.read(workbook_submissions.MAX_BYTES+1))
+        if content.getbuffer().nbytes>workbook_submissions.MAX_BYTES: abort(409)
+    except PermissionError: abort(403)
+    except (OSError,ValueError): abort(409,description="The original workbook is unavailable or failed integrity verification.")
+    response=send_file(content,as_attachment=True,download_name=row["original_filename"],
+                       mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",max_age=0)
+    response.headers["Cache-Control"]="private, no-store"
+    return response
+
+@app.get('/admin/workbooks')
+@admin_required
+def admin_workbooks():
+    status=request.args.get('status','pending')
+    if status not in ('pending','all','REJECTED','VALIDATION_FAILED','SUBMISSION_FAILED','VALIDATING','IMPORT_FAILED','IMPORTED'): abort(400)
+    raw=request.args.get('page','1')
+    if not raw.isascii() or not raw.isdigit() or len(raw)>6 or int(raw)<1: abort(400)
+    page=int(raw)
+    where="WHERE status IN ('PENDING_REVIEW','NEEDS_REVIEW','IMPORT_FAILED')" if status=='pending' else '' if status=='all' else 'WHERE status=?'
+    args=[] if status in ('pending','all') else [status]
+    with closing(db()) as c:
+        rows=c.execute('SELECT * FROM workbook_submissions '+where+' ORDER BY created_at DESC,id DESC LIMIT 21 OFFSET ?',
+                       (*args,(page-1)*20)).fetchall()
+    return render_template('admin/workbooks.html',submissions=rows[:20],has_next=len(rows)>20,page=page,status_filter=status)
+
+@app.get('/admin/workbooks/<submission_id>/download')
+@admin_required
+def admin_workbook_download(submission_id):
+    try: return submission_download_response(submission_id)
+    except PermissionError: abort(403)
+
+@app.route('/admin/workbooks/<submission_id>',methods=['GET','POST'])
+@admin_required
+def admin_workbook_review(submission_id):
+    row=workbook_submissions.get_submission(ROOT,current_user()['id'],submission_id)
+    if not row: abort(404)
+    error=None; result=None; code=200
+    if request.method=='POST':
+        try:
+            action=request.form.get('action')
+            if action not in ('review','reject','approve'): abort(400)
+            if request.form.get('confirmed')!='1':
+                if row['status'] not in workbook_review.REVIEWABLE:
+                    raise workbook_review.ReviewConflict('Submission is no longer awaiting review.')
+                reason=request.form.get('reason','')
+                if action=='reject' and (not reason.strip() or len(reason)>2000):
+                    raise ValueError('Enter a rejection reason of 1–2,000 characters.')
+                if action in ('review','approve'):
+                    result=workbook_review.preview(ROOT,current_user()['id'],submission_id)
+                    if result['baseline']!=request.form.get('baseline'):
+                        raise workbook_review.ReviewConflict('The preview changed. Inspect the refreshed changes before confirming review.')
+                    if action=='approve' and row['review_baseline']!=result['baseline']:
+                        raise workbook_review.ReviewConflict('Record a review of this preview before approving it.')
+                return render_template('admin/workbook_confirm.html',submission=row,review=result,
+                    action=action,reason=reason,baseline=request.form.get('baseline',''))
+            if action=='reject':
+                workbook_review.reject(ROOT,current_user()['id'],submission_id,request.form.get('reason',''))
+                flash('Workbook rejected. The submitter can see your reason. Directory data is unchanged.','success')
+            elif action=='review':
+                workbook_review.record_review(ROOT,current_user()['id'],submission_id,request.form.get('baseline',''))
+                flash('Review recorded. No import was performed.','success')
+            elif action=='approve':
+                if request.form.getlist('confirm_replacement')!=['1']:
+                    raise ValueError('Confirm the complete country replacement and its proposed removals.')
+                imported=workbook_approval.approve(ROOT,current_user()['id'],submission_id,request.form.get('baseline',''),
+                    authorize_workbook_approval,accept_ambiguous=request.form.getlist('accept_ambiguous')==['1'])
+                flash('Workbook approved and imported. Import history #'+str(imported['import_id'])+' was saved with its recovery backup.','success')
+            else: abort(400)
+        except PermissionError: abort(403)
+        except workbook_review.ReviewConflict as exc: error=str(exc); code=409
+        except workbook_approval.ApprovalFailed as exc: error=str(exc); code=503
+        except (ValueError,LookupError) as exc: error=str(exc); code=400
+        except (OSError,sqlite3.Error,TimeoutError): error='Operation unavailable. Reload this submission to check its latest status before trying again.'; code=503
+        else: return redirect(url_for('admin_workbook_review',submission_id=submission_id))
+        row=workbook_submissions.get_submission(ROOT,current_user()['id'],submission_id)
+    if row['status'] in workbook_review.REVIEWABLE:
+        try: result=workbook_review.preview(ROOT,current_user()['id'],submission_id)
+        except PermissionError: abort(403)
+        except (ValueError,LookupError): error=error or 'Preview is unavailable: validation, country, or file integrity checks failed. Request a corrected submission.'; code=max(code,409)
+        except (OSError,sqlite3.Error): error=error or 'Preview is temporarily unavailable. Reload or contact an administrator.'; code=503
+    raw=request.args.get('page','1'); query=request.args.get('q','').strip()[:200]; kind=request.args.get('kind','')
+    if not raw.isascii() or not raw.isdigit() or len(raw)>6 or int(raw)<1: abort(400)
+    page=int(raw); entries=result['entries'] if result else []
+    kinds=sorted({entry['kind'] for entry in entries})
+    if kind and kind not in kinds: abort(400)
+    entries=[entry for entry in entries if (not kind or entry['kind']==kind) and
+             (not query or query.lower() in json.dumps(entry,ensure_ascii=False).lower())]
+    return render_template('admin/workbook_review.html',submission=row,review=result,error=error,
+        entries=entries[(page-1)*20:page*20],page=page,has_next=len(entries)>page*20,total=len(entries),
+        kinds=kinds,kind=kind,q=query),code
+
+def authorize_workbook_approval(con):
+    """Recheck session/password/MFA in the same write transaction as the replacement."""
+    actor=current_user(); stamp=int(time.time()); sid=session.get('sid','')
+    if not actor: raise workbook_approval.ApprovalDenied('Sign in again before approving.')
+    row=con.execute('SELECT * FROM users WHERE id=?',(actor['id'],)).fetchone()
+    active=con.execute('SELECT * FROM security_sessions WHERE token_hash=?',(security.opaque(sid),)).fetchone()
+    valid=(row and row['role']=='ADMIN' and row['status']=='ACTIVE' and active and active['user_id']==actor['id']
+        and session.get('pwv')==password_version(row['password_hash'])
+        and stamp-active['started']<=SESSION_MAX and stamp-active['seen']<=SESSION_IDLE
+        and stamp-session.get('started',0)<=SESSION_MAX and stamp-session.get('seen',0)<=SESSION_IDLE)
+    if valid and app.config['MFA_ENABLED']:
+        state=mfa.account_state(con,row)
+        proof=con.execute('SELECT * FROM mfa_session_proofs WHERE token_hash=?',(security.opaque(sid),)).fetchone()
+        valid=(state['enabled'] and proof and proof['user_id']==actor['id'] and proof['verified']==1
+            and proof['security_version']==state['version'] and session.get('mfa_version')==state['version']
+            and session.get('mfa_verified') is True)
+    if not valid: raise workbook_approval.ApprovalDenied('Administrator session verification expired or changed. Sign in again.')
+
+@app.post("/admin/users/<int:uid>/workbook-access")
+@admin_required
+@admin_verification_errors
+def user_workbook_access(uid):
+    destination=url_for("user_edit",uid=uid)
+    flags=request.form.getlist("submit_workbooks")
+    if flags not in ([],["1"]): abort(400)
+    enabled=bool(flags)
+    raw=request.form.getlist("upload_countries") if enabled else []
+    if any(not value.isascii() or not value.isdigit() or len(value)>18 for value in raw): abort(400)
+    selected=sorted({int(value) for value in raw})
+    if len(selected)!=len(raw): abort(400)
+    with closing(db()) as c:
+        target=c.execute("SELECT role,status FROM users WHERE id=?",(uid,)).fetchone()
+        if not target: abort(404)
+        before=sorted(r[0] for r in c.execute("SELECT country_id FROM user_workbook_upload_access WHERE user_id=?",(uid,)))
+        known={r[0] for r in c.execute("SELECT id FROM countries")}
+    if enabled and target["role"]!="FULL_ACCESS": abort(400)
+    if not set(selected)<=known: abort(400)
+    if enabled and not selected:
+        flash("Select at least one allowed upload country. No changes were saved.","error")
+        return redirect(destination)
+    if before==selected:
+        flash("Workbook submission permission is unchanged.","success"); return redirect(destination)
+    inputs=prepare_admin_verification(destination)
+    with closing(db()) as c,c:
+        c.execute("BEGIN IMMEDIATE")
+        latest=c.execute("SELECT role,status FROM users WHERE id=?",(uid,)).fetchone()
+        current=sorted(r[0] for r in c.execute("SELECT country_id FROM user_workbook_upload_access WHERE user_id=?",(uid,)))
+        known={r[0] for r in c.execute("SELECT id FROM countries")}
+        if not latest or tuple(latest)!=tuple(target) or current!=before or not set(selected)<=known: abort(409)
+        verify_admin_change(c,inputs,destination)
+        c.execute("DELETE FROM user_workbook_upload_access WHERE user_id=?",(uid,))
+        c.executemany("INSERT INTO user_workbook_upload_access(user_id,country_id) VALUES(?,?)",[(uid,country) for country in selected])
+    logging.info("Workbook permission changed actor_id=%s target_id=%s countries=%s",current_user()["id"],uid,selected)
+    flash("Workbook submission permission saved. Permitted users can upload workbooks for later admin review.","success")
+    return redirect(destination)
 @app.route("/admin/users/<int:uid>",methods=["GET","POST"])
 @admin_required
 @admin_verification_errors
@@ -904,6 +1133,7 @@ def user_edit(uid):
             if sensitive: verify_admin_change(c,inputs,destination)
             before=access_summary(c,uid)
             c.execute("UPDATE users SET first_name=?,last_name=?,role=?,status=?,updated_at=? WHERE id=?",(*names,role,status,now(),uid))
+            if role!="FULL_ACCESS": c.execute("DELETE FROM user_workbook_upload_access WHERE user_id=?",(uid,))
             if pw: c.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",(generate_password_hash(pw),now(),uid))
             # Re-enabling an account cannot revive a cookie from before disablement.
             if pw or role!=target["role"] or status!=target["status"]:
@@ -944,7 +1174,8 @@ def user_edit(uid):
         sc={r["country_id"] for r in grants}; sa={r["country_id"] for r in grants if r["all_companies"]}
         sm={r["company_id"] for r in c.execute("SELECT company_id FROM user_company_access WHERE user_id=?",(uid,))}
         ss={r["field_name"] for r in c.execute("SELECT field_name FROM user_field_access WHERE user_id=?",(uid,))}&set(SALES_FIELDS)
-    return render_template("admin/user_edit.html",target=target,countries=get_countries(),selected_countries=sc,selected_all=sa,selected_companies=sm,companies=allco,sales_fields=SALES_FIELDS,selected_sales=ss,mfa_policy=mfa_status)
+        upload_countries=sorted(r[0] for r in c.execute("SELECT country_id FROM user_workbook_upload_access WHERE user_id=?",(uid,)))
+    return render_template("admin/user_edit.html",target=target,countries=get_countries(),selected_countries=sc,selected_all=sa,selected_companies=sm,companies=allco,sales_fields=SALES_FIELDS,selected_sales=ss,mfa_policy=mfa_status,selected_upload_countries=upload_countries)
 
 @app.post("/admin/users/<int:uid>/mfa-reset")
 @admin_required

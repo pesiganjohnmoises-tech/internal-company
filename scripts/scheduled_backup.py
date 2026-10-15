@@ -1,6 +1,6 @@
 """Private SQLite/workbook backups. No app import, secrets, or default deletion."""
 import argparse
-from contextlib import closing
+from contextlib import closing, nullcontext
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -19,6 +19,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils.backup_lock import file_lock
+from utils.workbook_submissions import check_snapshot
 
 FORMAT = "directory-scheduled-backup-v1"
 SOURCE_FORMAT = "directory-scheduled-backup-v2"
@@ -58,7 +59,8 @@ def check_database(path):
 
 def valid_member(name):
     return (name == "directory.db" or (name.startswith("source/") and source_member(name[7:])) or
-            bool(re.fullmatch(r"(?:data|upload_archive)/[^/\\]+\.xlsx", name, re.I)))
+            bool(re.fullmatch(r"(?:data|upload_archive)/[^/\\]+\.xlsx", name, re.I)) or
+            bool(re.fullmatch(r"workbook_submissions/[0-9a-f]{32}\.xlsx", name)))
 
 
 def source_member(name):
@@ -124,6 +126,7 @@ def verify(archive):
             with z.open("directory.db") as src, db.open("xb") as out:
                 shutil.copyfileobj(src, out)
             check_database(db)
+            with closing(sqlite3.connect(db)) as con: check_snapshot(con,files)
     created = datetime.fromisoformat(manifest["created_utc"])
     if created.tzinfo is None:
         raise ValueError("Missing timestamp timezone")
@@ -165,13 +168,14 @@ def retained(records, now, daily=7, weekly=3, monthly=2, source_records=None):
     return keep
 
 
-def create_backup(project, destination, now, include_source=False):
+def create_backup(project, destination, now, include_source=False, *, lock_held=False):
     source = safe_path(project / "directory.db")
     if not source.is_file():
         raise FileNotFoundError("Source database is missing")
     with tempfile.TemporaryDirectory(dir=destination, prefix=".staging-") as tmp:
         stage = Path(tmp)
-        with file_lock(project / ".backup-import.lock", timeout=60):
+        # Web approval already holds this same process lock. CLI callers always acquire it.
+        with (nullcontext() if lock_held else file_lock(project / ".backup-import.lock", timeout=60)):
             source_dirty = copy_source(project, stage) if include_source else None
             deadline = time.monotonic() + 600
             def progress(status, remaining, total):
@@ -180,12 +184,14 @@ def create_backup(project, destination, now, include_source=False):
             with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src:
                 with closing(sqlite3.connect(stage / "directory.db")) as out:
                     src.backup(out, pages=256, progress=progress, sleep=0.1)
-            for folder in ("data", "upload_archive"):
+            for folder in ("data", "upload_archive", "workbook_submissions"):
                 directory = safe_path(project / folder)
                 if not directory.is_dir():
+                    if folder=="workbook_submissions": continue  # Absent before the first submission.
                     raise FileNotFoundError(f"Required workbook directory missing: {directory}")
                 (stage / folder).mkdir()
                 for original in directory.iterdir():
+                    if folder=="workbook_submissions" and not re.fullmatch(r"[0-9a-f]{32}\.xlsx",original.name): continue
                     if original.name.startswith("~$") or original.suffix.lower() != ".xlsx":
                         continue
                     original = safe_path(original)

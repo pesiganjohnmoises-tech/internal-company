@@ -9,6 +9,7 @@
 *.log
 imports/
 /upload_archive/
+/workbook_submissions/
 /.backup-import.lock
 
 # Python

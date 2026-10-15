@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Upload workbook · Internal Company Directory{% endblock %}
+{% block content %}
+<div class="admin-head"><div><div class="eyebrow">WORKBOOKS</div><h1>Upload workbook</h1><p class="muted">Submit a complete country dataset for administrator review.</p></div><a class="secondary" href="{{url_for('my_workbooks')}}">My submissions</a></div>
+<section class="admin-panel workbook-form">
+  <p>Uploading does not change the directory. Missing companies and contacts may be proposed for removal when an administrator reviews this complete replacement.</p>
+  <p class="muted">Use an .xlsx file under 16 MB with a header row and company names. Only the active worksheet is processed. Save calculated formula results before uploading.</p>
+  {% if error %}<div class="notice error" role="alert">{{error}}</div>{% endif %}
+  <form method="post" enctype="multipart/form-data" class="form-grid" data-busy="Uploading and validating…">
+    <input type="hidden" name="csrf_token" value="{{csrf_token()}}">
+    <label>Country<select name="country_id" required><option value="">Choose a country</option>{% for country in countries %}<option value="{{country.id}}"{% if request.form.get('country_id')==country.id|string %} selected{% endif %}>{{country.name}}</option>{% endfor %}</select></label>
+    <label>Workbook<input type="file" name="workbook" accept=".xlsx" required></label>
+    <label class="full">Note for the reviewer (optional)<textarea name="note" maxlength="2000" rows="4">{{request.form.get('note','')}}</textarea></label>
+    <label class="checkrow full"><input type="checkbox" name="complete_country" value="1" required{% if request.form.get('complete_country')=='1' %} checked{% endif %}>I confirm this is the complete dataset for the selected country, including all companies and contacts to retain.</label>
+    <div class="full"><button class="primary" type="submit">Submit workbook</button></div>
+  </form>
+</section>
+{% endblock %}

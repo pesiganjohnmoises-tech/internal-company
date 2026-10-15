@@ -99,10 +99,11 @@ def backfill_source_data(db_path,data_dir):
 class ReplacementValidationError(ValueError):
     """Safe, generated validation details for a rejected standard replacement."""
 
-def import_workbook(path,db_path,country,replace_country=False,dry_run=False,on_success=None):
+def import_workbook(path,db_path,country,replace_country=False,dry_run=False,on_success=None,before_apply=None):
     """Load a workbook into one country. The result's "changes" lists companies added and removed.
     dry_run runs the whole import inside the transaction and rolls it back (import preview).
-    on_success(con,result) runs before commit; it must not commit the connection."""
+    on_success(con,result) runs before commit; it must not commit the connection.
+    before_apply(con) runs under BEGIN IMMEDIATE before any data changes; it must not commit."""
     wb=load_workbook(path,read_only=True,data_only=True)
     try:
         ws=wb.active; rows=ws.iter_rows(values_only=True)
@@ -133,6 +134,7 @@ def import_workbook(path,db_path,country,replace_country=False,dry_run=False,on_
     try:
         now=utcnow()
         con.execute("BEGIN IMMEDIATE")
+        if before_apply: before_apply(con)
         con.execute("INSERT OR IGNORE INTO countries(name,source_file,created_at,updated_at) VALUES(?,?,?,?)",(effective_country,Path(path).name,now,now))
         crow=con.execute("SELECT id FROM countries WHERE name=? COLLATE NOCASE",(effective_country,)).fetchone()
         cid=crow["id"]

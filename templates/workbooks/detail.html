@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% from 'workbooks/_status.html' import status %}
+{% block title %}Submission · Internal Company Directory{% endblock %}
+{% block content %}
+<div class="admin-head"><div><div class="eyebrow">WORKBOOK SUBMISSION</div><h1 class="workbook-filename">{{submission.original_filename}}</h1>{{status(submission.status)}}</div><a class="secondary" href="{{url_for('my_workbooks')}}">My submissions</a></div>
+<section class="admin-panel workbook-form">
+<dl><dt>Country</dt><dd>{{submission.country_name}}</dd><dt>Submitted (UTC)</dt><dd>{{submission.created_at}}</dd><dt>Last updated (UTC)</dt><dd>{{submission.updated_at}}</dd></dl>
+{% if submission.status=='PENDING_REVIEW' %}<p class="notice">Validation passed. Your workbook is pending administrator review. The directory has not changed.</p>{% endif %}
+{% if submission.status=='IMPORTED' %}<p class="notice success">Your workbook was approved and imported on {{submission.reviewed_at}} UTC.</p>{% endif %}
+{% if submission.status=='VALIDATING' %}<p class="notice">Validation has not completed. Processing may have been interrupted. Refresh to check again, or submit a new copy if this status persists. This submission cannot be approved while incomplete.</p>{% endif %}
+{% if submission.feedback %}<p class="notice" role="status">{{submission.feedback}}</p>{% endif %}
+{% if submission.rejection_reason %}<h2>Reviewer feedback</h2><p class="workbook-note">{{submission.rejection_reason}}</p>{% endif %}
+{% if summary %}<h2>Validation summary</h2><dl><dt>Active worksheet</dt><dd>{{summary.get('worksheet','—')}}</dd><dt>Data rows</dt><dd>{{summary.get('rows','—')}}</dd><dt>Companies</dt><dd>{{summary.get('companies','—')}}</dd><dt>Other worksheets (not processed)</dt><dd>{{summary.get('other_worksheets',0)}}</dd></dl>{% endif %}
+{% if submission.submission_note %}<h2>Your note</h2><p class="workbook-note">{{submission.submission_note}}</p>{% endif %}
+{% if submission.duplicate_of %}<p>This file matches an earlier upload. <a href="{{url_for('workbook_detail',submission_id=submission.duplicate_of)}}">View earlier submission</a>. No automatic import was performed.</p>{% endif %}
+<div class="workbook-pagination">{% if submission.sha256 %}<a class="secondary" href="{{url_for('download_submission',submission_id=submission.id)}}">Download original workbook</a>{% endif %}<a href="{{url_for('upload_workbook')}}">Submit a new copy</a></div>
+</section>
+{% endblock %}

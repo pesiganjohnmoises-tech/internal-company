@@ -178,6 +178,31 @@ For deployment, use HTTPS, a production WSGI server, regular backups, and monito
 
 Before activating this upgrade, back up the database, verify hosting/proxy configuration in staging, and expect everyone to sign in again once. Security tables are additive; do not roll back to cookie-only authentication that could accept revoked cookies. These application controls do not provide network-level DDoS protection.
 
+## Workbook submission and administrator approval
+
+An administrator can grant **Submit workbooks** to an active **FULL_ACCESS**
+account under **Users → Edit access → Workbook submission**, selecting its upload
+countries. This is an independent permission; existing accounts do not gain it
+automatically. The permitted account sees **Workbooks → Upload workbook / My
+submissions** and can access only its own submission history and original files.
+
+Administrators use **Admin → Workbook reviews** (`/admin/workbooks`) to inspect
+proposed changes, reject with feedback, or record a review and explicitly approve
+an import. Each workbook is a complete replacement for its selected country;
+missing records can be removed only through the confirmed approval flow. Uploading,
+opening a preview, or cancelling confirmation does not replace directory data.
+
+Approval requires a verified recovery archive and fresh authorization/file/data
+checks, with data, import history, status, and audit events committed together.
+Recovery archives in private `backups/workbook-approvals/` have no automatic
+retention cleanup. Preserve compatible recovery tooling during code rollback.
+
+See [workflow and matching plan](WORKBOOK_APPROVAL_PLAN.md),
+[release review and rollout/rollback runbook](WORKBOOK_RELEASE_RUNBOOK.md), and
+[backup guidance](BACKUP_SETUP.md). Production activation is not cleared by local
+tests; the existing production MFA guard and hosted rehearsal requirements remain.
+Run synthetic release checks with `python -B scripts/check_workbook_release.py`.
+
 ## MFA staged local implementation
 
 MFA storage, QR enrollment and login verification are implemented behind the

@@ -304,6 +304,22 @@ document.addEventListener('DOMContentLoaded', () => {
     update();
   });
   const deleteForm = document.querySelector('form[data-verification="delete"]');
+  const workbookForm = document.querySelector('form[data-verification="workbook"]');
+  if (workbookForm) {
+    const initial = JSON.parse(workbookForm.dataset.initialCountries).map(String).sort();
+    const update = () => {
+      const enabled = workbookForm.elements.submit_workbooks.checked;
+      workbookForm.querySelector('.workbook-country-options').disabled = !enabled;
+      const selected = enabled ? [...workbookForm.querySelectorAll('[name="upload_countries"]:checked')].map(input => input.value).sort() : [];
+      const changed = JSON.stringify(initial) !== JSON.stringify(selected) || enabled !== (initial.length > 0);
+      setVerification(workbookForm, changed);
+      workbookForm.querySelector('button[type="submit"]').disabled = !changed;
+    };
+    workbookForm.addEventListener('change', update);
+    workbookForm.addEventListener('submit', update);
+    window.addEventListener('pageshow', update);
+    update();
+  }
   if (deleteForm) {
     const open = document.querySelector('[data-delete-open]');
     const cancel = deleteForm.querySelector('[data-delete-cancel]');

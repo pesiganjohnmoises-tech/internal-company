@@ -1,0 +1,11 @@
+{% extends 'base.html' %}{% from 'workbooks/_status.html' import status %}
+{% block title %}My submissions · Internal Company Directory{% endblock %}
+{% block content %}
+<div class="admin-head"><div><div class="eyebrow">WORKBOOKS</div><h1>My submissions</h1><p class="muted">Your uploaded workbooks and validation results. Live data stays unchanged until administrator approval.</p></div><a class="primary" href="{{url_for('upload_workbook')}}">Upload workbook</a></div>
+<section class="admin-panel">
+{% if submissions %}<div class="table-wrap"><table class="data-table"><thead><tr><th>Workbook</th><th>Country</th><th>Submitted (UTC)</th><th>Status</th><th>Feedback</th></tr></thead><tbody>
+{% for item in submissions %}<tr><td><a href="{{url_for('workbook_detail',submission_id=item.id)}}">{{item.original_filename}}</a></td><td>{{item.country_name}}</td><td>{{item.created_at}}</td><td>{{status(item.status)}}</td><td>{{item.feedback or item.rejection_reason or '—'}}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p class="empty">No submissions on this page. Upload a workbook to get started.</p>{% endif %}
+<nav class="workbook-pagination" aria-label="Submission pages">{% if page>1 %}<a href="{{url_for('my_workbooks',page=page-1)}}">Previous</a>{% endif %}<span>Page {{page}}</span>{% if has_next %}<a href="{{url_for('my_workbooks',page=page+1)}}">Next</a>{% endif %}</nav>
+</section>
+{% endblock %}

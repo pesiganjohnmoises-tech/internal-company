@@ -19,8 +19,10 @@
     </a>
     {% if user %}
     {% set in_admin=request.path.startswith('/admin') %}
+    {% set in_workbooks=request.path.startswith('/workbooks') %}
     <nav class="top-nav" aria-label="Main navigation">
-      <a class="nav-link{% if not in_admin %} active{% endif %}" href="{{url_for('search')}}"{% if not in_admin %} aria-current="page"{% endif %}>{{icon('search')}}<span>Directory</span></a>
+      <a class="nav-link{% if not in_admin and not in_workbooks %} active{% endif %}" href="{{url_for('search')}}"{% if not in_admin and not in_workbooks %} aria-current="page"{% endif %}>{{icon('search')}}<span>Directory</span></a>
+      {% if workbook_submitter %}<a class="nav-link{% if in_workbooks %} active{% endif %}" href="{{url_for('my_workbooks')}}"{% if in_workbooks %} aria-current="page"{% endif %}>Workbooks</a>{% endif %}
       {% if user.role=='ADMIN' %}<a class="nav-link{% if in_admin %} active{% endif %}" href="{{url_for('admin_dashboard')}}"{% if in_admin %} aria-current="page"{% endif %}>{{icon('shield')}}<span>Admin</span></a>{% endif %}
     </nav>
     {% set role_label={'USER':'User','FULL_ACCESS':'Full Access','ADMIN':'Admin'}.get(user.role,user.role) %}

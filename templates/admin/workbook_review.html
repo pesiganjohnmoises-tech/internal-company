@@ -1,0 +1,34 @@
+{% extends 'base.html' %}{% from 'admin/_nav.html' import admin_nav with context %}{% from 'workbooks/_status.html' import status %}
+{% block title %}Review workbook · Internal Company Directory{% endblock %}
+{% block content %}
+<div class="admin-head"><div><div class="eyebrow">ADMINISTRATION / WORKBOOK REVIEW</div><h1 class="workbook-filename">{{submission.original_filename}}</h1><p>{{submission.country_name}} · @{{submission.uploader_username}} · {{submission.created_at}} UTC</p>{{status(submission.status)}}</div><a class="secondary" href="{{url_for('admin_workbooks')}}">Review queue</a></div>
+{{admin_nav('admin_workbooks')}}
+{% if error %}<div class="notice error" role="alert">{{error}}</div>{% endif %}
+<section class="admin-panel settings-card">
+<p>This is a complete country replacement. Missing companies and contacts may be removed. Review the workbook's completeness and the changes below before approving.</p>
+{% if submission.status=='IMPORTED' %}<p class="notice success">Approved and imported on {{submission.reviewed_at}} UTC. <a href="{{url_for('imports_page')}}">Import history #{{submission.import_id}}</a>.</p><p class="muted workbook-note">Recovery backup: {{submission.backup_reference}}</p>{% endif %}
+{% if submission.submission_note %}<h2>Submitter note</h2><p class="workbook-note">{{submission.submission_note}}</p>{% endif %}
+{% if submission.feedback %}<p>{{submission.feedback}}</p>{% endif %}
+{% if submission.rejection_reason %}<h2>Rejection reason</h2><p class="workbook-note">{{submission.rejection_reason}}</p>{% endif %}
+{% if submission.sha256 %}<a class="secondary" href="{{url_for('admin_workbook_download',submission_id=submission.id)}}">Download submitted workbook</a>{% endif %}
+</section>
+{% if review %}
+<section class="admin-panel settings-card"><h2>Proposed changes</h2><p class="muted">Active worksheet: {{review.validation.worksheet}} · {{review.validation.rows}} rows. Other worksheets are not processed. Company names use the existing importer's trimmed, case-insensitive matching. Contact database IDs are rebuilt and are not counted as logical changes.</p>
+<p class="muted">Exact contact values match first; remaining unique identical contact names and types are compared as updates. A changed name or uncertain pairing is shown as ambiguous when both current and incoming rows remain.</p>
+<dl class="review-counts">{% for key,value in review.counts.items() %}<div><dt>{{key|replace('_',' ')|capitalize}}</dt><dd>{{value}}</dd></div>{% endfor %}</dl>
+{% for concern in review.concerns %}<p class="notice warn">{{concern}}</p>{% endfor %}
+{% if submission.review_baseline %}<p class="notice {{'success' if submission.review_baseline==review.baseline else 'warn'}}">{{'A review was recorded for this baseline. Approval will still require fresh checks.' if submission.review_baseline==review.baseline else 'The saved review is stale. Inspect this refreshed preview and record a new review.'}}</p>{% endif %}
+<form method="post"><input type="hidden" name="csrf_token" value="{{csrf_token()}}"><input type="hidden" name="action" value="review"><input type="hidden" name="baseline" value="{{review.baseline}}"><button class="primary">Record review</button></form>
+{% if submission.review_baseline==review.baseline %}<form method="post" class="workbook-pagination"><input type="hidden" name="csrf_token" value="{{csrf_token()}}"><input type="hidden" name="action" value="approve"><input type="hidden" name="baseline" value="{{review.baseline}}"><button class="primary">Approve and import…</button><span class="muted">You will confirm the replacement before it runs. A verified recovery backup is required.</span></form>{% endif %}
+</section>
+<section class="admin-panel settings-card"><h2>Change details</h2>
+<form method="get" class="review-filter"><label>Search changes<input name="q" maxlength="200" value="{{q}}" placeholder="Company, contact, field or value"></label><label>Change type<select name="kind"><option value="">All changes</option>{% for value in kinds %}<option{% if kind==value %} selected{% endif %}>{{value}}</option>{% endfor %}</select></label><button class="secondary">Filter</button></form>
+<p class="muted">{{total}} matching change entries</p>
+{% for entry in entries %}<article class="review-entry"><h3>{{entry.kind}} · {{entry.company}}</h3><p>{{entry.label}}{% if entry.source_row %} · {{entry.source_side|default('Incoming')}} source row {{entry.source_row}}{% endif %}</p>
+{% if entry.fields %}<div class="table-wrap"><table class="data-table review-fields"><thead><tr><th>Field</th><th>Current</th><th>Incoming</th></tr></thead><tbody>{% for field in entry.fields %}<tr><th scope="row">{{field.field}}</th><td>{{field.before if field.before is not none else '—'}}</td><td>{{field.after if field.after is not none else '—'}}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</article>{% else %}<p>No change entries match this filter.</p>{% endfor %}
+<nav class="workbook-pagination" aria-label="Change detail pages">{% if page>1 %}<a href="{{url_for('admin_workbook_review',submission_id=submission.id,q=q,kind=kind,page=page-1)}}">Previous</a>{% endif %}<span>Page {{page}}</span>{% if has_next %}<a href="{{url_for('admin_workbook_review',submission_id=submission.id,q=q,kind=kind,page=page+1)}}">Next</a>{% endif %}</nav>
+</section>
+{% endif %}
+{% if submission.status in ['PENDING_REVIEW','NEEDS_REVIEW','IMPORT_FAILED'] %}<section class="admin-panel settings-card"><h2>Reject submission</h2><p>Give the submitter a reason so they can correct the workbook and submit a new copy. Rejection does not change directory data.</p><form method="post" class="workbook-form"><input type="hidden" name="csrf_token" value="{{csrf_token()}}"><input type="hidden" name="action" value="reject"><label>Reason<textarea name="reason" rows="3" maxlength="2000" required>{{request.form.get('reason','')}}</textarea></label><button class="secondary">Reject workbook</button></form></section>{% endif %}
+{% endblock %}

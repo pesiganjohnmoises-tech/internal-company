@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav %}{% from "_icons.html" import icon %}
+{% extends "base.html" %}{% from "admin/_nav.html" import admin_nav with context %}{% from "_icons.html" import icon %}
 {% block title %}Imports · Internal Company Directory{% endblock %}
 {% block content %}
 <div class="admin-head">
@@ -117,7 +117,7 @@
 </section>
 <section class="admin-panel">
   <div class="section-head"><h2>Automatic backups</h2></div>
-  <p class="muted">A copy of the whole database is saved in <code>backups/</code> just before every import; the newest 10 are kept. To restore one, copy it over <code>directory.db</code> on the server and reload the web app.</p>
+  <p class="muted">Direct Excel imports save database copies in <code>backups/</code>; the newest 10 are kept. Approved workbook submissions instead create verified recovery archives. Open the submission in <a href="{{url_for('admin_workbooks')}}">Workbook reviews</a> for its recovery-backup reference. Approval archives are retained separately.</p>
   {% if backups %}
   <div class="table-wrap">
     <table>
@@ -126,7 +126,7 @@
     </table>
   </div>
   {% else %}
-  <p class="muted">No backups yet. One is made the first time you import.</p>
+  <p class="muted">No direct-import database backups are listed here. Approved submissions list their recovery archive on the review page.</p>
   {% endif %}
 </section>
 {% endblock %}

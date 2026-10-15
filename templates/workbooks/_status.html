@@ -1,0 +1,3 @@
+{% macro status(value) -%}
+<span class="badge {{'good' if value=='IMPORTED' else 'bad' if value in ['VALIDATION_FAILED','SUBMISSION_FAILED','IMPORT_FAILED','REJECTED'] else 'warn'}}">{{{'VALIDATING':'Validating / incomplete','PENDING_REVIEW':'Pending review','VALIDATION_FAILED':'Validation failed','SUBMISSION_FAILED':'Submission failed','NEEDS_REVIEW':'Needs renewed review','REJECTED':'Rejected','IMPORTING':'Importing','IMPORTED':'Imported','IMPORT_FAILED':'Import failed'}.get(value,'Unknown status')}}</span>
+{%- endmacro %}
